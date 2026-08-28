@@ -1,4 +1,5 @@
 const std = @import("std");
+const Req = @import("Request.zig");
 
 /// this should only be modified by handleArgs and then never modified again
 /// until deinit is called after all the data has been parsed
@@ -11,4 +12,6 @@ pub var raw_file: struct {
     }
 } = .{};
 
-pub fn parseJson() !void {}
+pub fn parseJson() !void {
+    const wrapper = Req.ClintInterface.init(std.heap.smp_allocator) catch |err| std.log.err("{any}\n", .{err});
+}

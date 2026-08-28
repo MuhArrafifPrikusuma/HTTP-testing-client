@@ -76,6 +76,7 @@ fn setConsume(stdout: *std.Io.Writer) !void {
 fn consume(arg: []const u8, io: std.Io, allocator: std.mem.Allocator, list: *std.ArrayList(u8)) !void {
     const file = try std.Io.Dir.cwd().openFile(io, arg, .{});
     defer file.close(io);
+
     errdefer list.deinit(allocator);
 
     var buf: [4096]u8 = undefined;

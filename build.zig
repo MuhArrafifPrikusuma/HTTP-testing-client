@@ -13,6 +13,17 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    if (optimize == .debug) {
+        exe.root_module.sanitize_thread = true;
+    }
+    if (optimize == .fast or optimize == .small) {
+        exe.root_module.strip = true;
+        exe.root_module.stack_check = false; // might want to enable later
+
+        exe.lto = .full;
+        exe.discard_local_symbols = true;
+    }
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");

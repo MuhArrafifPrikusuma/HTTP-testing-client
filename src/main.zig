@@ -1,6 +1,7 @@
 const std = @import("std");
 const argument = @import("arguments.zig");
+const json = @import("json.zig");
 
 pub fn main(init: std.process.Init) !void {
-    try argument.handleArgs(init.minimal.args, init.io);
+    argument.handleArgs(init.minimal.args, init.io);
 }

@@ -61,7 +61,7 @@ fn processArg(arg: []const u8, stdout: *std.Io.Writer) !void {
 }
 fn help(stdout: *std.Io.Writer) !void {
     try stdout.print("test help\n", .{});
-    std.log.debug("fill later\n", .{});
+    try stdout.flush();
     std.process.exit(1);
 }
 

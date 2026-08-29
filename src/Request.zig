@@ -1,12 +1,30 @@
 const std = @import("std");
 
-const Client = struct {
+const Methods = enum {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+};
+
+const Request = struct {
+    method: Methods,
+    path: []const u8,
+    host: []const u8 = "localhost:8080", // <- automatically filled
+    agent: []const u8 = "idk-for-now/tester",
+    body: []const u8,
+};
+
+pub const Client = struct {
     // fuzz = true for auto generate data
-    fuzz: bool,
+    fuzz: bool = false,
     // how many times to repeat this, if you combine this with fuzz
     // it will generate different data on every request
-    repeat: std.atomic.Value(u32),
-    request: std.http.Client.FetchOptions,
+    repeat: u32 = 0,
+    // ^ that one is just for parsing use atomic_repeat with repeat as it's value for
+    // thread safe counter
+    atomic_repeat: std.atomic.Value(u32) = .init(0),
+    request: Request = undefined,
 };
 
 /// initiate client arena allocator

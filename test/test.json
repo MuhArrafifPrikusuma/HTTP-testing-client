@@ -1,0 +1,9 @@
+{
+	"fuzz": true,
+	"repeat": 30,
+	"request": {
+		"method": "GET",
+		"path": "/api/test",
+		"body": "just testing this thing hope it worked well"
+	}
+}

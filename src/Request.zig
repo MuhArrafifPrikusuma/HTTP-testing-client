@@ -59,8 +59,8 @@ const SharedErr = error{
 
 pub const Shared = struct {
     // use counter for indexing
-    read_counter: []std.atomic.Value(u32) = undefined,
-    write_counter: []std.atomic.Value(u32) = undefined,
+    read_counter: std.ArrayList(std.atomic.Value(u32)) = .empty,
+    write_counter: std.ArrayList(std.atomic.Value(u32)) = .empty,
     // if null sleep the thread for 5ms
     request: std.ArrayList(std.http.Client.FetchOptions) = .empty,
     mutex: std.Io.RwLock = .{},
@@ -93,7 +93,7 @@ pub const Shared = struct {
         self.mutex.lockShared(io);
         defer self.mutex.unlockShared(io);
 
-        const idx: usize = self.read_counter[thread_id].fetchAdd(1, .acq_rel);
+        const idx: usize = self.read_counter.items[thread_id].fetchAdd(1, .acq_rel);
 
         while (true) {
             if (idx >= max) return SharedErr.ReadComplete;
@@ -113,7 +113,8 @@ pub const Shared = struct {
 // and then generate data on the fly when a thread requested for it
 
 pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
-    req.write_counter[thread_id].store(0, .monotonic);
+    const allocator = req.arena.allocator();
+    req.write_counter.append(allocator, .init(0));
 
     builder(ci, io, req, thread_id);
 }
@@ -122,7 +123,7 @@ pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_
 fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
     const c = ci.client[thread_id];
 
-    const idx = req.write_counter[thread_id].fetchAdd(1, .acq_rel);
+    const idx = req.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
     if (idx >= ci.client[thread_id].repeat) return;
 
     parseBody(&c, req, idx, io) catch |err| std.log.err("{any}\n", .{err});
@@ -145,7 +146,7 @@ fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
     req.*.request.items[idx].payload = c.request.body;
 }
 
-const Specials = enum {
+const SpecialTags = enum {
     // after you can add rules like this: {RAND_***;{rules}}
     RAND_U8,
     RAND_U16,
@@ -155,29 +156,62 @@ const Specials = enum {
     RAND_I16,
     RAND_I32,
     RAND_I64,
+    RAND_F16,
+    RAND_F32,
+    RAND_F64,
     RAND_STR,
+};
+
+const Value = union(enum) {
+    // might be needed or might be not figure it out on testing
+    // uint: u64,
+    int: i64,
+    float: f64,
+    // remember this is json so the string must contain "" for string type
+    string: []const u8,
+};
+
+const SNIndex = struct {
+    start: usize = 0,
+    end: usize = 0,
 };
 
 /// search and replaces special indicator, return new formatted slice if found return null if not
 /// NOTE: invalid specials are just regular string and won't be processes nor will it throw an error
 fn handleSpecial(content: []const u8) ?[]const u8 {
     var start: usize = 0;
+    const idx: SNIndex = .{};
 
     while (true) {
         const first_idx = std.mem.find(u8, content[start..], "{") orelse break;
         const last_idx = std.mem.find(u8, content[first_idx..], "}") orelse break;
         start = last_idx;
-        rebuildContent(content[first_idx + 1 .. last_idx - 1], content);
+
+        idx = .{
+            .start = first_idx,
+            .end = last_idx,
+        };
+
+        if (rebuildContent(content[idx.start + 1 .. idx.end - 1], content, idx)) {} else {
+            continue;
+        }
     }
 }
 
 /// check whether a target is truly a special and pass it to the replacer which then generate a replacement with fuzzer and replaced the original string
-fn rebuildContent(special_content: []const u8, orig: []const u8) !?void {
+fn rebuildContent(special_content: []const u8, orig: []const u8, idx: *const SNIndex) !?void {
+    // NOTE: don't forget to handle rules here and on fuzzer too
     var iter = std.mem.splitScalar(u8, special_content, ';');
     const content = iter.next() orelse return null;
 
-    var buf: [128]u8 = undefined;
-    std.ascii.upperString(&buf, special_content);
+    var buf: [256]u8 = undefined;
+    const tag_name = std.ascii.upperString(&buf, content);
+    const tag = std.meta.stringToEnum(SpecialTags, tag_name) orelse return null;
+
+    const new_data = fuzzer(orig, tag);
 }
 
-fn fuzzer(c: *const Client, req: *Shared) !void {}
+fn replace() !void {}
+
+/// return newly generated data based on tag and rules
+fn fuzzer(orig: []const u8, tag: SpecialTags) []const u8 {}

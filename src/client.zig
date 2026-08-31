@@ -3,7 +3,7 @@ const std = @import("std");
 const Req = @import("Request.zig");
 const g = @import("main.zig");
 
-pub fn clientNet(io: std.Io, allocator: std.mem.Allocator, ci: *Req.ClientInterface) !void {
+pub fn clientNet(io: std.Io, allocator: std.mem.Allocator, ci: *Req.ClientInterface, group: std.Io.Group) !void {
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
     _ = ci;
     defer client.deinit();

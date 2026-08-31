@@ -10,8 +10,6 @@ pub fn main(init: std.process.Init) !void {
     argument.handleArgs(init.minimal.args, init.io);
     const ci = try json.parseJson();
 
-    repeat.store(ci.client., .monotonic);
-
     var group: std.Io.Group = .init;
     // start processes
     var i: usize = 0;
@@ -22,7 +20,11 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("{d}\n", .{repeat.load(.acquire)});
 }
 
-fn split(ci: *Req.ClientInterface) !void {
+fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
+    var shared: Req.Shared = .{};
     // get client fields from parsed json
-    for (ci.client) |cf| {}
+
+    for (ci.client, 0..) |_, i| {
+        Req.initBuilder(ci, io, &shared, i);
+    }
 }

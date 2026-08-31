@@ -112,30 +112,72 @@ pub const Shared = struct {
 // NOTE: determine whether it wants random data for fixed data and if it's random then take the struct see the requirements
 // and then generate data on the fly when a thread requested for it
 
-fn MethodHandler(method: std.http.Method) type {}
+pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
+    req.write_counter[thread_id].store(0, .monotonic);
 
-// this will be called by client to generate data
-pub fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
-    const c = ci.client[thread_id];
-
-    parseBody(&c) catch |err| std.log.err("{any}\n", .{err});
+    builder(ci, io, req, thread_id);
 }
 
-fn parseBody(c: *Client, req: *Shared) !void {
-    const allocator = req.arena.allocator();
+// this will be called by client to generate data
+fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
+    const c = ci.client[thread_id];
 
-    var fetch_options: std.http.Client.FetchOptions = undefined;
+    const idx = req.write_counter[thread_id].fetchAdd(1, .acq_rel);
+    if (idx >= ci.client[thread_id].repeat) return;
+
+    parseBody(&c, req, idx, io) catch |err| std.log.err("{any}\n", .{err});
+}
+
+fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
+    var fetch_options: std.http.Client.FetchOptions = .{};
 
     // pass request line
     fetch_options.method = c.request.method;
+    fetch_options.headers.content_type = .{ .override = c.request.content_type };
     fetch_options.location.url = c.request.uri;
+    fetch_options.headers.user_agent = .{ .override = c.request.agent };
+    fetch_options.headers.host = .{ .override = c.request.host };
+    fetch_options.payload = c.request.body;
 
-    if (fetch_options.method) |method| {
-        switch (method) {}
-    } else {
-        // NOTE: later on make a function to point directly to the invalid string in the json file
-        std.log.err("Method is required please provide a method\n", .{});
+    req.mutex.lock(io);
+    defer req.mutex.unlock(io);
+
+    req.*.request.items[idx].payload = c.request.body;
+}
+
+const Specials = enum {
+    // after you can add rules like this: {RAND_***;{rules}}
+    RAND_U8,
+    RAND_U16,
+    RAND_U32,
+    RAND_U64,
+    RAND_I8,
+    RAND_I16,
+    RAND_I32,
+    RAND_I64,
+    RAND_STR,
+};
+
+/// search and replaces special indicator, return new formatted slice if found return null if not
+/// NOTE: invalid specials are just regular string and won't be processes nor will it throw an error
+fn handleSpecial(content: []const u8) ?[]const u8 {
+    var start: usize = 0;
+
+    while (true) {
+        const first_idx = std.mem.find(u8, content[start..], "{") orelse break;
+        const last_idx = std.mem.find(u8, content[first_idx..], "}") orelse break;
+        start = last_idx;
+        rebuildContent(content[first_idx + 1 .. last_idx - 1], content);
     }
+}
+
+/// check whether a target is truly a special and pass it to the replacer which then generate a replacement with fuzzer and replaced the original string
+fn rebuildContent(special_content: []const u8, orig: []const u8) !?void {
+    var iter = std.mem.splitScalar(u8, special_content, ';');
+    const content = iter.next() orelse return null;
+
+    var buf: [128]u8 = undefined;
+    std.ascii.upperString(&buf, special_content);
 }
 
 fn fuzzer(c: *const Client, req: *Shared) !void {}

@@ -23,7 +23,8 @@ pub fn main(init: std.process.Init) !void {
 fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     var shared: Req.Shared = .{};
     // get client fields from parsed json
+
     for (ci.client, 0..) |_, i| {
-        Req.builder(ci, io, &shared, i);
+        Req.initBuilder(ci, io, &shared, i);
     }
 }

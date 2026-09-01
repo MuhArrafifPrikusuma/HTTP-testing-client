@@ -4,27 +4,23 @@ const json = @import("json.zig");
 const client = @import("client.zig");
 const Req = @import("Request.zig");
 
-pub var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-
 pub fn main(init: std.process.Init) !void {
     argument.handleArgs(init.minimal.args, init.io);
     const ci = try json.parseJson();
 
-    var group: std.Io.Group = .init;
-    // start processes
-    var i: usize = 0;
-    while (i < ci.client.repeat) : (i += 1)
-        group.concurrent(init.io, client.clientNet, .{ init.io, init.gpa, ci }) catch |err| std.log.err("{any}\n", .{err});
-
-    group.await(init.io) catch |err| std.log.err("{any}\n", .{err});
-    std.debug.print("{d}\n", .{repeat.load(.acquire)});
+    splitTasks(ci, init.io) catch |err| std.log.err("{any}\n", .{err});
 }
 
 fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
-    var shared: Req.Shared = .{};
+    const shared = try Req.Shared.init(std.heap.smp_allocator);
     // get client fields from parsed json
 
+    var group: std.Io.Group = .init;
     for (ci.client, 0..) |_, i| {
-        Req.initBuilder(ci, io, &shared, i);
+        try group.concurrent(io, Req.initBuilder, .{ ci, io, shared, i });
+        try group.concurrent(io, client.clientNet, .{ io, ci, group, shared, i });
     }
+
+    group.await(io) catch |err| std.log.err("{any}\n", .{err});
+    std.debug.print("{any}\n", .{shared.write_counter.items});
 }

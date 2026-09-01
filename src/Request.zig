@@ -1,5 +1,4 @@
 const std = @import("std");
-const regex = @import("regex");
 
 pub const Client = struct {
     // fuzz = true for auto generate data
@@ -20,13 +19,13 @@ const Methods = enum {
 };
 
 const Request = struct {
-    method: std.http.Method,
+    method: std.http.Method = .GET,
     path: []const u8,
     host: []const u8 = "localhost:8080",
     agent: []const u8 = "idk-for-now/tester", // <- automatically filled
-    body: []const u8,
+    body: ?[]const u8 = null,
     content_type: []const u8,
-    accept_type: []const u8,
+    accept_type: ?[]const u8 = null,
 };
 
 /// initiate client arena allocator
@@ -61,16 +60,16 @@ const SharedErr = error{
 /// NOTE: if a thread finished it should free all of memory they use for other slices, use loop with allocator free for this
 pub const Shared = struct {
     // use counter for indexing
-    read_counter: std.ArrayList(std.atomic.Value(u32)) = .empty,
-    write_counter: std.ArrayList(std.atomic.Value(u32)) = .empty,
+    read_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
+    write_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
     // if null sleep the thread for 5ms
     request: std.ArrayList(std.http.Client.FetchOptions) = .empty,
-    mutex: std.Io.Mutex = .{},
+    mutex: std.Io.Mutex = undefined,
 
     arena: std.heap.ArenaAllocator,
 
     pub fn init(backing_allocator: std.mem.Allocator) !*Shared {
-        const arena = std.heap.ArenaAllocator.init(backing_allocator);
+        var arena = std.heap.ArenaAllocator.init(backing_allocator);
         errdefer arena.deinit();
 
         const allocator = arena.allocator();
@@ -113,36 +112,50 @@ pub const Shared = struct {
 
 pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
     const allocator = req.arena.allocator();
-    req.write_counter.append(allocator, .init(0));
+    req.write_counter.append(allocator, .init(0)) catch |err| {
+        std.log.err("{any}\n", .{err});
+        std.process.exit(1);
+    };
 
     builder(ci, io, req, thread_id);
 }
 
 // this will be called by client to generate data
 fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
-    const c = ci.client[thread_id];
+    var c = ci.client[thread_id];
+    while (true) {
+        const idx = req.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
+        if (idx >= c.repeat) {
+            // NOTE: this sub is only for debug purposes
+            _ = req.write_counter.items[thread_id].fetchSub(1, .acq_rel);
+            break;
+        }
 
-    const idx = req.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
-    if (idx >= ci.client[thread_id].repeat) return;
+        std.log.debug("thread id:{d}::{d}\n", .{ thread_id, idx });
 
-    parseBody(&c, req, idx, io) catch |err| std.log.err("{any}\n", .{err});
+        parseBody(&c, req, idx, io) catch |err| std.log.err("{any}\n", .{err});
+    }
 }
 
 fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
-    var fetch_options: std.http.Client.FetchOptions = .{};
+    var fetch_options: std.http.Client.FetchOptions = undefined;
+    _ = idx;
 
+    try req.mutex.lock(io);
+    defer req.mutex.unlock(io);
+
+    std.debug.print("previous body: {s}\n", .{c.request.body.?});
+    if (c.fuzz) c.request.body = handleSpecial(c.request.body, io, req.arena.allocator()) orelse c.request.body;
+    std.debug.print("current body: {s}\n", .{c.request.body.?});
     // pass request line
     fetch_options.method = c.request.method;
     fetch_options.headers.content_type = .{ .override = c.request.content_type };
-    fetch_options.location.url = c.request.uri;
+    fetch_options.location.url = c.uri;
     fetch_options.headers.user_agent = .{ .override = c.request.agent };
     fetch_options.headers.host = .{ .override = c.request.host };
     fetch_options.payload = c.request.body;
 
-    req.mutex.lock(io);
-    defer req.mutex.unlock(io);
-
-    req.*.request.items[idx].payload = c.request.body;
+    try req.*.request.append(req.arena.allocator(), fetch_options);
 }
 
 const SpecialTags = enum {
@@ -175,13 +188,15 @@ const Rules = struct {
 
 /// search and replaces special indicator, return new formatted slice if found return null if not
 /// NOTE: invalid specials are just regular string and won't be processes nor will it throw an error
-fn handleSpecial(content: []const u8, io: std.Io) ?[]const u8 {
+fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator) ?[]const u8 {
+    const content_string = content orelse return null;
     var start: usize = 0;
-    const idx: SNIndex = .{};
+    var idx: SNIndex = .{};
 
+    var new_content: ?[]const u8 = null;
     while (true) {
-        const first_idx = std.mem.find(u8, content[start..], "{") orelse break;
-        const last_idx = std.mem.find(u8, content[first_idx..], "}") orelse break;
+        const first_idx = std.mem.find(u8, content_string[start..], "{") orelse break;
+        const last_idx = std.mem.find(u8, content_string[first_idx..], "}") orelse break;
         start = last_idx;
 
         idx = .{
@@ -189,17 +204,28 @@ fn handleSpecial(content: []const u8, io: std.Io) ?[]const u8 {
             .end = last_idx,
         };
 
-        if (rebuildContent(content[idx.start + 1 .. idx.end - 1], content, idx, io)) {} else {
+        new_content = rebuildContent(content_string[idx.start + 1 .. idx.end], content_string, &idx, io, allocator) catch |err| {
+            std.log.err("{any}\n", .{err});
             continue;
-        }
+        } orelse continue;
     }
+    return new_content;
 }
 
 /// check whether a target is truly a special and pass it to the replacer which then generate a replacement with fuzzer and replaced the original string
-fn rebuildContent(special_content: []const u8, orig: []const u8, idx: *const SNIndex, io: std.Io) !?void {
+fn rebuildContent(
+    special_content: []const u8,
+    orig: []const u8,
+    idx: *const SNIndex,
+    io: std.Io,
+    allocator: std.mem.Allocator,
+) !?[]const u8 {
     // NOTE: don't forget to handle rules here and on fuzzer too
     var iter = std.mem.splitScalar(u8, special_content, ';');
     const content = iter.next() orelse return null;
+
+    // make this better later
+    if (content.len > ~@as(u8, 0)) return null;
 
     var buf: [256]u8 = undefined;
     const tag_name = std.ascii.upperString(&buf, content);
@@ -208,19 +234,28 @@ fn rebuildContent(special_content: []const u8, orig: []const u8, idx: *const SNI
     const new_data = try fuzzer(tag, io);
 
     var buf_dat: [2048]u8 = undefined;
-    const data_string = switch (new_data) {
-        .int => |val| {
-            try std.fmt.bufPrint(&buf_dat, "{d}", .{val});
-        },
-        .float => |val| {
-            try std.fmt.bufPrint(&buf_dat, "{d}", .{val});
-        },
-        .string => |val| {
-            try std.fmt.bufPrint(&buf_dat, "\"{s}\"", .{val});
-        },
+    const replacement = blk: {
+        switch (new_data) {
+            .int => |val| {
+                break :blk try std.fmt.bufPrint(&buf_dat, "{d}", .{val});
+            },
+            .float => |val| {
+                break :blk try std.fmt.bufPrint(&buf_dat, "{d}", .{val});
+            },
+            .string => |val| {
+                break :blk try std.fmt.bufPrint(&buf_dat, "\"{s}\"", .{val});
+            },
+        }
     };
 
-    std.mem.replacementSize(u8, orig[idx.read_start..idx.end], orig[idx.start..idx.end], data_string);
+    const new_size = std.mem.replacementSize(u8, orig[idx.read_start..idx.end], orig[idx.start..idx.end], replacement);
+    const buffer = try allocator.alloc(u8, new_size);
+
+    const original = orig;
+    allocator.free(original);
+
+    _ = std.mem.replace(u8, original, original[idx.start..idx.end], replacement, buffer);
+    return buffer;
 }
 
 const FuzzErr = error{
@@ -231,32 +266,33 @@ const FuzzErr = error{
 // random data generators
 // NOTE: later pass rules as parameters to this functions
 fn randNumbers(comptime T: type, random: std.Random) Value {
+    var value: Value = undefined;
     switch (T) {
         i64 => {
             // NOTE: do the actual thing later
-            random.intRangeLessThan(T, 0, 65553);
+            value = .{ .int = random.intRangeLessThan(i64, 0, 65553) };
         },
-        f64 => {
-            // NOTE: finish later
-        },
+        f64 => {},
         else => unreachable,
     }
+    return value;
 }
 
 /// return newly generated data based on tag and rules
 fn fuzzer(tag: SpecialTags, io: std.Io) !Value {
     var prng: std.Random.DefaultPrng = .init(blk: {
         var b: [8]u8 = undefined;
-        try std.Io.random(io, &b);
+        std.Io.random(io, &b);
         const seeder = std.mem.readInt(u64, &b, .native);
 
         break :blk seeder;
     });
     const random = prng.random();
 
-    switch (tag) {
+    const randomize = switch (tag) {
         .RAND_NUM => randNumbers(i64, random),
         .RAND_FLOAT => randNumbers(f64, random),
-        else => std.log.err("Idk lol why ask", .{}),
-    }
+        else => unreachable,
+    };
+    return randomize;
 }

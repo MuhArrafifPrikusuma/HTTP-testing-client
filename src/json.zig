@@ -1,8 +1,5 @@
 const std = @import("std");
 const Req = @import("Request.zig");
-const builtin = @import("builtin");
-
-var debug_allocator = @import("main.zig").debug_allocator;
 
 /// this should only be modified by handleArgs and then never modified again
 /// until deinit is called after all the data has been parsed
@@ -16,12 +13,7 @@ pub var raw_file: struct {
 } = .{};
 
 pub fn parseJson() !*Req.ClientInterface {
-    const backing_allocator = switch (builtin.mode) {
-        .fast, .small => std.heap.smp_allocator,
-        else => debug_allocator.allocator(),
-    };
-
-    const ci = Req.ClientInterface.init(backing_allocator) catch |err| {
+    const ci = Req.ClientInterface.init(std.heap.smp_allocator) catch |err| {
         std.log.err("{any}\n", .{err});
         std.process.exit(1);
     };
@@ -30,26 +22,28 @@ pub fn parseJson() !*Req.ClientInterface {
     var scanner = std.json.Scanner.initCompleteInput(allocator, raw_file.content.items);
     defer scanner.deinit();
 
-    var list: std.ArrayList(Req.Client) = .empty;
-    defer list.deinit(allocator);
+    // var list: std.ArrayList(Req.Client) = .empty;
+    // defer list.deinit(allocator);
 
-    var count: usize = 1;
+    // var count: usize = 1;
 
-    while (true) {
-        const parsed = std.json.parseFromTokenSource(Req.Client, allocator, &scanner, .{ .ignore_unknown_fields = true }) catch |err| {
-            if (err == error.EndOfStream) break;
-            std.log.err("parse Json: {any}\n", .{err});
-            break;
-        };
+    // while (true) {
+    // NOTE: PLEASSEE! DON'T BE LAZY MAKE THIS BETTER ERROR HANDLING YOU IDIOT PIECE OF GARBAGE
+    const parsed = std.json.parseFromTokenSource([]Req.Client, allocator, &scanner, .{ .ignore_unknown_fields = true }) catch |err| {
+        // if (err == error.EndOfStream) break;
+        std.log.err("parse Json: {any}\n", .{err});
+        std.process.exit(1);
+        // break;
+    };
+    //
+    // std.log.debug("fuzz: {any}\n", .{parsed.value.fuzz});
+    // std.log.debug("repeat: {d}\n", .{parsed.value.repeat});
+    // std.log.debug("method: {any}\n", .{parsed.value.request.method});
 
-        std.log.debug("fuzz: {any}\n", .{parsed.value.fuzz});
-        std.log.debug("repeat: {d}\n", .{parsed.value.repeat});
-        std.log.debug("method: {any}\n", .{parsed.value.request.method});
+    // try list.append(allocator, parsed.value);
 
-        try list.append(allocator, parsed.value);
-
-        count += 1;
-    }
+    //     count += 1;
+    // }
     //
     // var parsed = std.json.parseFromSlice(
     //     Req.Client,
@@ -62,7 +56,7 @@ pub fn parseJson() !*Req.ClientInterface {
     // };
     // defer parsed.deinit();
     //
-    ci.client = try allocator.dupe(Req.Client, list.items);
+    ci.client = try allocator.dupe(Req.Client, parsed.value);
 
     return ci;
 }

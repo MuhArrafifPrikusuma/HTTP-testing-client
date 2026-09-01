@@ -1,7 +1,9 @@
 const std = @import("std");
 const json = @import("json.zig");
+const builtin = @import("builtin");
 
 var next_should_bfile: bool = false;
+var debug_allocator = @import("main.zig").debug_allocator;
 
 pub fn handleArgs(args: std.process.Args, io: std.Io) void {
     var iter = args.iterate();
@@ -11,7 +13,10 @@ pub fn handleArgs(args: std.process.Args, io: std.Io) void {
     const stdout = &writer.interface;
 
     json.raw_file = .{
-        .allocator = std.heap.smp_allocator,
+        .allocator = switch (builtin.mode) {
+            .fast, .small => std.heap.smp_allocator,
+            else => debug_allocator.allocator(),
+        },
         .content = .empty,
     };
 

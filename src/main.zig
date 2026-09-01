@@ -4,7 +4,7 @@ const json = @import("json.zig");
 const client = @import("client.zig");
 const Req = @import("Request.zig");
 
-pub var repeat: std.atomic.Value(u32) = .init(0);
+pub var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 
 pub fn main(init: std.process.Init) !void {
     argument.handleArgs(init.minimal.args, init.io);

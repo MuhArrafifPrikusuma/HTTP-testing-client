@@ -1,4 +1,5 @@
 const std = @import("std");
+const regex = @import("regex");
 
 pub const Client = struct {
     // fuzz = true for auto generate data
@@ -57,13 +58,14 @@ const SharedErr = error{
     ReadComplete,
 };
 
+/// NOTE: if a thread finished it should free all of memory they use for other slices, use loop with allocator free for this
 pub const Shared = struct {
     // use counter for indexing
     read_counter: std.ArrayList(std.atomic.Value(u32)) = .empty,
     write_counter: std.ArrayList(std.atomic.Value(u32)) = .empty,
     // if null sleep the thread for 5ms
     request: std.ArrayList(std.http.Client.FetchOptions) = .empty,
-    mutex: std.Io.RwLock = .{},
+    mutex: std.Io.Mutex = .{},
 
     arena: std.heap.ArenaAllocator,
 
@@ -90,9 +92,6 @@ pub const Shared = struct {
 
     /// return SharedErr.ReadComplete when there is no more request string to process
     pub fn read(self: *Shared, io: std.Io, thread_id: usize, max: u32) SharedErr!*std.http.Client.FetchOptions {
-        self.mutex.lockShared(io);
-        defer self.mutex.unlockShared(io);
-
         const idx: usize = self.read_counter.items[thread_id].fetchAdd(1, .acq_rel);
 
         while (true) {
@@ -148,17 +147,8 @@ fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
 
 const SpecialTags = enum {
     // after you can add rules like this: {RAND_***;{rules}}
-    RAND_U8,
-    RAND_U16,
-    RAND_U32,
-    RAND_U64,
-    RAND_I8,
-    RAND_I16,
-    RAND_I32,
-    RAND_I64,
-    RAND_F16,
-    RAND_F32,
-    RAND_F64,
+    RAND_NUM,
+    RAND_FLOAT,
     RAND_STR,
 };
 
@@ -172,13 +162,20 @@ const Value = union(enum) {
 };
 
 const SNIndex = struct {
+    read_start: usize = 0, // <- for the very start of a replacement
     start: usize = 0,
     end: usize = 0,
 };
 
+const Rules = struct {
+    // for random integers
+    min: ?i64 = null,
+    max: ?i64 = null,
+};
+
 /// search and replaces special indicator, return new formatted slice if found return null if not
 /// NOTE: invalid specials are just regular string and won't be processes nor will it throw an error
-fn handleSpecial(content: []const u8) ?[]const u8 {
+fn handleSpecial(content: []const u8, io: std.Io) ?[]const u8 {
     var start: usize = 0;
     const idx: SNIndex = .{};
 
@@ -192,14 +189,14 @@ fn handleSpecial(content: []const u8) ?[]const u8 {
             .end = last_idx,
         };
 
-        if (rebuildContent(content[idx.start + 1 .. idx.end - 1], content, idx)) {} else {
+        if (rebuildContent(content[idx.start + 1 .. idx.end - 1], content, idx, io)) {} else {
             continue;
         }
     }
 }
 
 /// check whether a target is truly a special and pass it to the replacer which then generate a replacement with fuzzer and replaced the original string
-fn rebuildContent(special_content: []const u8, orig: []const u8, idx: *const SNIndex) !?void {
+fn rebuildContent(special_content: []const u8, orig: []const u8, idx: *const SNIndex, io: std.Io) !?void {
     // NOTE: don't forget to handle rules here and on fuzzer too
     var iter = std.mem.splitScalar(u8, special_content, ';');
     const content = iter.next() orelse return null;
@@ -208,10 +205,58 @@ fn rebuildContent(special_content: []const u8, orig: []const u8, idx: *const SNI
     const tag_name = std.ascii.upperString(&buf, content);
     const tag = std.meta.stringToEnum(SpecialTags, tag_name) orelse return null;
 
-    const new_data = fuzzer(orig, tag);
+    const new_data = try fuzzer(tag, io);
+
+    var buf_dat: [2048]u8 = undefined;
+    const data_string = switch (new_data) {
+        .int => |val| {
+            try std.fmt.bufPrint(&buf_dat, "{d}", .{val});
+        },
+        .float => |val| {
+            try std.fmt.bufPrint(&buf_dat, "{d}", .{val});
+        },
+        .string => |val| {
+            try std.fmt.bufPrint(&buf_dat, "\"{s}\"", .{val});
+        },
+    };
+
+    std.mem.replacementSize(u8, orig[idx.read_start..idx.end], orig[idx.start..idx.end], data_string);
 }
 
-fn replace() !void {}
+const FuzzErr = error{
+    UnexpectedError,
+    InvalidRules,
+};
+
+// random data generators
+// NOTE: later pass rules as parameters to this functions
+fn randNumbers(comptime T: type, random: std.Random) Value {
+    switch (T) {
+        i64 => {
+            // NOTE: do the actual thing later
+            random.intRangeLessThan(T, 0, 65553);
+        },
+        f64 => {
+            // NOTE: finish later
+        },
+        else => unreachable,
+    }
+}
 
 /// return newly generated data based on tag and rules
-fn fuzzer(orig: []const u8, tag: SpecialTags) []const u8 {}
+fn fuzzer(tag: SpecialTags, io: std.Io) !Value {
+    var prng: std.Random.DefaultPrng = .init(blk: {
+        var b: [8]u8 = undefined;
+        try std.Io.random(io, &b);
+        const seeder = std.mem.readInt(u64, &b, .native);
+
+        break :blk seeder;
+    });
+    const random = prng.random();
+
+    switch (tag) {
+        .RAND_NUM => randNumbers(i64, random),
+        .RAND_FLOAT => randNumbers(f64, random),
+        else => std.log.err("Idk lol why ask", .{}),
+    }
+}

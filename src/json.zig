@@ -1,5 +1,8 @@
 const std = @import("std");
 const Req = @import("Request.zig");
+const builtin = @import("builtin");
+
+var debug_allocator = @import("main.zig").debug_allocator;
 
 /// this should only be modified by handleArgs and then never modified again
 /// until deinit is called after all the data has been parsed
@@ -13,7 +16,12 @@ pub var raw_file: struct {
 } = .{};
 
 pub fn parseJson() !*Req.ClientInterface {
-    const ci = Req.ClientInterface.init(std.heap.smp_allocator) catch |err| {
+    const backing_allocator = switch (builtin.mode) {
+        .fast, .small => std.heap.smp_allocator,
+        else => debug_allocator.allocator(),
+    };
+
+    const ci = Req.ClientInterface.init(backing_allocator) catch |err| {
         std.log.err("{any}\n", .{err});
         std.process.exit(1);
     };

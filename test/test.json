@@ -1,34 +1,23 @@
 [
 	{
 		"fuzz": true,
-		"repeat": 30,
+		"repeat": 1,
 		"uri": "localhost:8080",
 		"request": {
 			"method": "GET",
 			"path": "/api/test",
-			"body": "{RAND_NUM}",
+			"body": "{RAND_STR}",
 			"content_type": "text/plain"
 		}
 	},
 	{
 		"fuzz": true,
-		"repeat": 10,
+		"repeat": 1,
 		"uri": "localhost:8080",
 		"request": {
 			"method": "GET",
 			"path": "/api/test",
-			"body": "{RAND_NUM}",
-			"content_type": "text/plain"
-		}
-	},
-	{
-		"fuzz": true,
-		"repeat": 20,
-		"uri": "localhost:8080",
-		"request": {
-			"method": "GET",
-			"path": "/api/test",
-			"body": "{RAND_NUM}",
+			"body": "{RAND_NUM}{RAND_STR}",
 			"content_type": "text/plain"
 		}
 	}

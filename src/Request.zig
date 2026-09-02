@@ -8,7 +8,7 @@ pub const Client = struct {
     repeat: u32 = 1,
     // NOTE: use this as the best url and combine it with path or i might not have to do that if i connect first
     uri: []const u8,
-    request: Request = undefined,
+    request: Request = .{},
 };
 
 const Methods = enum {
@@ -19,12 +19,12 @@ const Methods = enum {
 };
 
 const Request = struct {
-    method: std.http.Method = .GET,
-    path: []const u8,
-    host: []const u8 = "localhost:8080",
+    method: ?std.http.Method = null,
+    path: []const u8 = "/",
+    host: ?[]const u8 = "127.0.0.1", // <- NOTE: replace this with client host after this
     agent: []const u8 = "idk-for-now/tester", // <- automatically filled
     body: ?[]const u8 = null,
-    content_type: []const u8,
+    content_type: []const u8 = "text/plain",
     accept_type: ?[]const u8 = null,
 };
 
@@ -148,6 +148,10 @@ fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
     _ = idx;
 
     var body: ?[]const u8 = c.request.body;
+    const host = c.request.host orelse {
+        std.log.err("host not found you need a host idiot\n", .{});
+        std.process.exit(1);
+    };
 
     const uri_string = try std.mem.concat(allocator, u8, &.{ c.uri, c.request.path });
 
@@ -159,7 +163,7 @@ fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
     fetch_options.headers.content_type = .{ .override = c.request.content_type };
     fetch_options.location = .{ .url = uri_string };
     fetch_options.headers.user_agent = .{ .override = c.request.agent };
-    fetch_options.headers.host = .{ .override = c.request.host };
+    fetch_options.headers.host = .{ .override = host };
     fetch_options.payload = body;
 
     std.log.debug("why isn't it here\n", .{});
@@ -208,22 +212,51 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
     var start: usize = 0;
     var idx: SNIndex = .{};
 
-    std.log.debug("is here\n", .{});
+    var current_offset: usize = 0;
+
     var new_content: ?[]const u8 = null;
     while (true) {
-        const first_idx = std.mem.find(u8, content_string[start..], "{") orelse break;
-        const last_idx = std.mem.find(u8, content_string[first_idx..], "}") orelse break;
-        start = last_idx;
+        const first_idx = if (std.mem.find(u8, content_string[start..], "{")) |found_idx|
+            found_idx + current_offset
+        else
+            break;
+        current_offset += first_idx;
+
+        const last_idx = if (std.mem.find(u8, content_string[first_idx..], "}")) |found_idx|
+            found_idx + first_idx
+        else
+            break;
+
+        std.debug.print("len: {d}\n", .{content_string.len});
+        std.debug.print("offset: {d}\n", .{current_offset});
+
+        current_offset += last_idx - first_idx;
+        if (current_offset > content_string.len) break;
+
+        start = last_idx + first_idx;
 
         idx = .{
             .start = first_idx,
             .end = last_idx,
         };
 
-        new_content = rebuildContent(content_string[idx.start + 1 .. idx.end], content_string, &idx, io, allocator) catch |err| {
-            std.log.err("{any}\n", .{err});
-            continue;
-        } orelse continue;
+        if (new_content) |ctn| {
+            new_content = std.mem.concat(allocator, u8, &.{
+                ctn,
+                rebuildContent(content_string[idx.start + 1 .. idx.end], content_string, &idx, io, allocator) catch |err| {
+                    std.log.err("{any}\n", .{err});
+                    continue;
+                } orelse continue,
+            }) catch |err| {
+                std.log.err("{any}\n", .{err});
+                std.process.exit(1);
+            };
+        } else {
+            new_content = rebuildContent(content_string[idx.start + 1 .. idx.end], content_string, &idx, io, allocator) catch |err| {
+                std.log.err("{any}\n", .{err});
+                continue;
+            } orelse continue;
+        }
     }
     return new_content;
 }
@@ -268,10 +301,7 @@ fn rebuildContent(
     const buffer = try allocator.alloc(u8, new_size);
     std.debug.print("{d}\n", .{buffer.len});
 
-    const original = orig;
-    allocator.free(original);
-
-    _ = std.mem.replace(u8, original[idx.start..idx.end], original[idx.start..idx.end], replacement, buffer);
+    _ = std.mem.replace(u8, orig[idx.start..idx.end], orig[idx.start..idx.end], replacement, buffer);
     return buffer;
 }
 
@@ -294,6 +324,11 @@ fn randNumbers(comptime T: type, random: std.Random) Value {
     }
     return value;
 }
+fn randString(random: std.Random) Value {
+    _ = random;
+    const value: Value = .{ .string = "this is random" };
+    return value;
+}
 
 /// return newly generated data based on tag and rules
 fn fuzzer(tag: SpecialTags, io: std.Io) !Value {
@@ -309,7 +344,7 @@ fn fuzzer(tag: SpecialTags, io: std.Io) !Value {
     const randomize = switch (tag) {
         .RAND_NUM => randNumbers(i64, random),
         .RAND_FLOAT => randNumbers(f64, random),
-        else => unreachable,
+        .RAND_STR => randString(random),
     };
     return randomize;
 }

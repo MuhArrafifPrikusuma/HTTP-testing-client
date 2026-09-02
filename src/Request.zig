@@ -78,6 +78,7 @@ pub const Shared = struct {
 
         self.* = .{
             .arena = arena,
+            .mutex = .{ .state = .init(.unlocked) },
         };
 
         return self;
@@ -111,11 +112,15 @@ pub const Shared = struct {
 // and then generate data on the fly when a thread requested for it
 
 pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
-    const allocator = req.arena.allocator();
-    req.write_counter.append(allocator, .init(0)) catch |err| {
-        std.log.err("{any}\n", .{err});
-        std.process.exit(1);
-    };
+    // const allocator = req.arena.allocator();
+    // const initial_value: std.atomic.Value(usize) = .init(0);
+    //
+    // req.write_counter.ensureUnusedCapacity(allocator, 1) catch |err| {
+    //     std.log.err("failed to allocate memory: {any}\n", .{err});
+    //     std.process.exit(1);
+    // };
+    //
+    // req.write_counter.appendAssumeCapacity(initial_value);
 
     builder(ci, io, req, thread_id);
 }
@@ -133,29 +138,39 @@ fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usiz
 
         std.log.debug("thread id:{d}::{d}\n", .{ thread_id, idx });
 
-        parseBody(&c, req, idx, io) catch |err| std.log.err("{any}\n", .{err});
+        parseBody(&c, req, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
     }
 }
 
 fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
     var fetch_options: std.http.Client.FetchOptions = undefined;
+    const allocator = req.arena.allocator();
     _ = idx;
 
-    try req.mutex.lock(io);
-    defer req.mutex.unlock(io);
+    var body: ?[]const u8 = c.request.body;
 
-    std.debug.print("previous body: {s}\n", .{c.request.body.?});
-    if (c.fuzz) c.request.body = handleSpecial(c.request.body, io, req.arena.allocator()) orelse c.request.body;
-    std.debug.print("current body: {s}\n", .{c.request.body.?});
+    const uri_string = try std.mem.concat(allocator, u8, &.{ c.uri, c.request.path });
+
+    std.debug.print("pref: {?s}\n", .{body});
+    if (c.fuzz) body = handleSpecial(c.request.body, io, allocator) orelse body;
+    std.debug.print("after: {?s}\n", .{body});
     // pass request line
     fetch_options.method = c.request.method;
     fetch_options.headers.content_type = .{ .override = c.request.content_type };
-    fetch_options.location.url = c.uri;
+    fetch_options.location = .{ .url = uri_string };
     fetch_options.headers.user_agent = .{ .override = c.request.agent };
     fetch_options.headers.host = .{ .override = c.request.host };
-    fetch_options.payload = c.request.body;
+    fetch_options.payload = body;
 
-    try req.*.request.append(req.arena.allocator(), fetch_options);
+    std.log.debug("why isn't it here\n", .{});
+    try req.mutex.lock(io);
+    {
+        std.log.debug("it's locked\n", .{});
+        defer req.mutex.unlock(io);
+        std.log.debug("it's unlocked\n", .{});
+
+        try req.*.request.append(allocator, fetch_options);
+    }
 }
 
 const SpecialTags = enum {
@@ -193,6 +208,7 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
     var start: usize = 0;
     var idx: SNIndex = .{};
 
+    std.log.debug("is here\n", .{});
     var new_content: ?[]const u8 = null;
     while (true) {
         const first_idx = std.mem.find(u8, content_string[start..], "{") orelse break;
@@ -248,13 +264,14 @@ fn rebuildContent(
         }
     };
 
-    const new_size = std.mem.replacementSize(u8, orig[idx.read_start..idx.end], orig[idx.start..idx.end], replacement);
+    const new_size = std.mem.replacementSize(u8, orig[idx.start..idx.end], orig[idx.start..idx.end], replacement);
     const buffer = try allocator.alloc(u8, new_size);
+    std.debug.print("{d}\n", .{buffer.len});
 
     const original = orig;
     allocator.free(original);
 
-    _ = std.mem.replace(u8, original, original[idx.start..idx.end], replacement, buffer);
+    _ = std.mem.replace(u8, original[idx.start..idx.end], original[idx.start..idx.end], replacement, buffer);
     return buffer;
 }
 

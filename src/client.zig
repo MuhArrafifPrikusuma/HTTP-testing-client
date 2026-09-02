@@ -5,7 +5,7 @@ const Req = @import("Request.zig");
 pub fn clientNet(
     io: std.Io,
     ci: *Req.ClientInterface,
-    group: std.Io.Group,
+    group: *std.Io.Group,
     shared: *Req.Shared,
     thread_id: usize,
 ) !void {

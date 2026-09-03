@@ -213,6 +213,7 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
     var idx: SNIndex = .{};
 
     var current_offset: usize = 0;
+    var prev_offset: usize = 0;
 
     var new_content: ?[]const u8 = null;
     while (true) {
@@ -220,20 +221,16 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
             found_idx + current_offset
         else
             break;
-        current_offset += first_idx;
 
         const last_idx = if (std.mem.find(u8, content_string[first_idx..], "}")) |found_idx|
             found_idx + first_idx
         else
             break;
 
-        std.debug.print("len: {d}\n", .{content_string.len});
-        std.debug.print("offset: {d}\n", .{current_offset});
-
-        current_offset += last_idx - first_idx;
         if (current_offset > content_string.len) break;
+        current_offset = last_idx;
 
-        start = last_idx + first_idx;
+        start = last_idx;
 
         idx = .{
             .start = first_idx,
@@ -241,22 +238,54 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
         };
 
         if (new_content) |ctn| {
-            new_content = std.mem.concat(allocator, u8, &.{
-                ctn,
-                rebuildContent(content_string[idx.start + 1 .. idx.end], content_string, &idx, io, allocator) catch |err| {
-                    std.log.err("{any}\n", .{err});
-                    continue;
-                } orelse continue,
-            }) catch |err| {
+            new_content = std.mem.concat(
+                allocator,
+                u8,
+
+                &.{
+                    ctn,
+                    content_string[prev_offset + 1 .. idx.start],
+
+                    rebuildContent(
+                        content_string[idx.start + 1 .. idx.end],
+                        content_string,
+                        &idx,
+                        io,
+                        allocator,
+                    ) catch |err| {
+                        std.log.err("{any}\n", .{err});
+                        continue;
+                    } orelse content_string[idx.start + 1 .. idx.end],
+                },
+            ) catch |err| {
                 std.log.err("{any}\n", .{err});
                 std.process.exit(1);
             };
         } else {
-            new_content = rebuildContent(content_string[idx.start + 1 .. idx.end], content_string, &idx, io, allocator) catch |err| {
+            new_content = std.mem.concat(
+                allocator,
+                u8,
+
+                &.{
+                    content_string[0..idx.start],
+
+                    rebuildContent(
+                        content_string[idx.start + 1 .. idx.end],
+                        content_string,
+                        &idx,
+                        io,
+                        allocator,
+                    ) catch |err| {
+                        std.log.err("{any}\n", .{err});
+                        continue;
+                    } orelse content_string[idx.start + 1 .. idx.end],
+                },
+            ) catch |err| {
                 std.log.err("{any}\n", .{err});
-                continue;
-            } orelse continue;
+                std.process.exit(1);
+            };
         }
+        prev_offset = last_idx;
     }
     return new_content;
 }
@@ -299,7 +328,6 @@ fn rebuildContent(
 
     const new_size = std.mem.replacementSize(u8, orig[idx.start..idx.end], orig[idx.start..idx.end], replacement);
     const buffer = try allocator.alloc(u8, new_size);
-    std.debug.print("{d}\n", .{buffer.len});
 
     _ = std.mem.replace(u8, orig[idx.start..idx.end], orig[idx.start..idx.end], replacement, buffer);
     return buffer;
@@ -324,6 +352,8 @@ fn randNumbers(comptime T: type, random: std.Random) Value {
     }
     return value;
 }
+
+/// NOTE: obviously replace this later
 fn randString(random: std.Random) Value {
     _ = random;
     const value: Value = .{ .string = "this is random" };

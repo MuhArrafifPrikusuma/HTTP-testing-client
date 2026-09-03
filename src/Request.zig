@@ -222,6 +222,11 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
         else
             break;
 
+        const do_have_middle = if (std.mem.find(u8, content_string[first_idx + 1 ..], "{")) |found_idx|
+            found_idx + first_idx
+        else
+            null;
+
         const last_idx = if (std.mem.find(u8, content_string[first_idx..], "}")) |found_idx|
             found_idx + first_idx
         else
@@ -232,11 +237,14 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
 
         start = last_idx;
 
+        if (do_have_middle) |yes_do| if (yes_do < last_idx) continue;
+
         idx = .{
             .start = first_idx,
             .end = last_idx,
         };
 
+        // NOTE: find a way to not discard the all stuff after last {RAND}
         if (new_content) |ctn| {
             new_content = std.mem.concat(
                 allocator,
@@ -255,7 +263,7 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
                     ) catch |err| {
                         std.log.err("{any}\n", .{err});
                         continue;
-                    } orelse content_string[idx.start + 1 .. idx.end],
+                    } orelse content_string[idx.start .. idx.end + 1],
                 },
             ) catch |err| {
                 std.log.err("{any}\n", .{err});
@@ -285,7 +293,22 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
                 std.process.exit(1);
             };
         }
+
         prev_offset = last_idx;
+    }
+
+    if (new_content) |ctn| {
+        if (current_offset < content_string.len) new_content = std.mem.concat(
+            allocator,
+            u8,
+            &.{
+                ctn,
+                content_string[idx.end + 1 ..],
+            },
+        ) catch |err| {
+            std.log.err("{any}\n", .{err});
+            std.process.exit(1);
+        };
     }
     return new_content;
 }
@@ -326,10 +349,22 @@ fn rebuildContent(
         }
     };
 
-    const new_size = std.mem.replacementSize(u8, orig[idx.start..idx.end], orig[idx.start..idx.end], replacement);
+    const new_size = std.mem.replacementSize(
+        u8,
+        orig[idx.start..idx.end],
+        orig[idx.start..idx.end],
+        replacement,
+    );
+
     const buffer = try allocator.alloc(u8, new_size);
 
-    _ = std.mem.replace(u8, orig[idx.start..idx.end], orig[idx.start..idx.end], replacement, buffer);
+    _ = std.mem.replace(
+        u8,
+        orig[idx.start..idx.end],
+        orig[idx.start..idx.end],
+        replacement,
+        buffer,
+    );
     return buffer;
 }
 

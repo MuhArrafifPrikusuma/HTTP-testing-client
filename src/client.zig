@@ -21,9 +21,9 @@ pub fn clientNet(
             std.log.err("Client request fetch: {any}\n", .{err});
             continue;
         };
-        std.debug.print("do we get here\n", .{});
         if (result.status.phrase()) |res| {
-            std.debug.print("test result: {s}\n", .{res});
+            _ = res;
+            // std.debug.print("test result: {s}\n", .{res});
         }
     }
 }

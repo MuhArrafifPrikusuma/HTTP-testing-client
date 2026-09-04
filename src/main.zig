@@ -19,16 +19,21 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     const total_task = ci.client.len;
 
     try shared.write_counter.ensureUnusedCapacity(allocator, total_task);
-    // try shared.read_counter.ensureUnusedCapacity(allocator, total_task);
+    try shared.read_counter.ensureUnusedCapacity(allocator, total_task);
 
     var index: usize = 0;
     while (index < total_task) : (index += 1) {
         shared.write_counter.appendAssumeCapacity(.init(0));
-        // shared.read_counter.appendAssumeCapacity(.init(0));
+        shared.read_counter.appendAssumeCapacity(.init(0));
     }
 
     var group: std.Io.Group = .init;
     for (ci.client, 0..) |_, i| {
+        shared.request.appendNTimes(shared.arena.allocator(), null, @as(usize, ci.client[i].repeat)) catch |err| {
+            std.log.err("not enough memory: {any}\n", .{err});
+            std.process.exit(1);
+        };
+
         try group.concurrent(io, Req.initBuilder, .{ ci, io, shared, i });
         try group.concurrent(io, client.clientNet, .{ io, ci, &group, shared, i });
     }

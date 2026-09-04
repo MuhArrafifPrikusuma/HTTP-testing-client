@@ -21,7 +21,7 @@ const Methods = enum {
 const Request = struct {
     method: ?std.http.Method = null,
     path: []const u8 = "/",
-    host: ?[]const u8 = "127.0.0.1", // <- NOTE: replace this with client host after this
+    host: []const u8 = "127.0.0.1", // <- NOTE: replace this with client host after this
     agent: []const u8 = "idk-for-now/tester", // <- automatically filled
     body: ?[]const u8 = null,
     content_type: []const u8 = "text/plain",
@@ -63,7 +63,7 @@ pub const Shared = struct {
     read_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
     write_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
     // if null sleep the thread for 5ms
-    request: std.ArrayList(std.http.Client.FetchOptions) = .empty,
+    request: std.ArrayList(?std.http.Client.FetchOptions) = .empty,
     mutex: std.Io.Mutex = undefined,
 
     arena: std.heap.ArenaAllocator,
@@ -81,6 +81,7 @@ pub const Shared = struct {
             .mutex = .{ .state = .init(.unlocked) },
         };
 
+        // NOTE: CHANGE THE WAY TO RESIZE ARRAY LIST DON'T RESIZE IT ONE BY ONE ADD LIKE 5 OR 10 AND MAKE THE VALUE NULL
         return self;
     }
 
@@ -91,16 +92,22 @@ pub const Shared = struct {
     }
 
     /// return SharedErr.ReadComplete when there is no more request string to process
-    pub fn read(self: *Shared, io: std.Io, thread_id: usize, max: u32) SharedErr!*std.http.Client.FetchOptions {
+    pub fn read(self: *Shared, io: std.Io, thread_id: usize, max: u32) SharedErr!*const std.http.Client.FetchOptions {
         const idx: usize = self.read_counter.items[thread_id].fetchAdd(1, .acq_rel);
+        std.debug.print("now reading: {d}\n", .{idx});
+        std.debug.print("max: {d}\n", .{max});
 
         while (true) {
             if (idx >= max) return SharedErr.ReadComplete;
 
-            if (self.request_string.items[idx]) |req| {
+            if (self.request.items[idx]) |req| {
+                std.debug.print("is it ready?: {any}\n", .{req});
                 return &req;
             } else {
-                std.Io.sleep(io, std.Io.Duration.fromMilliseconds(5), std.Io.Clock.real);
+                std.Io.sleep(io, std.Io.Duration.fromMilliseconds(5), std.Io.Clock.real) catch |err| {
+                    std.log.err("sleep: {any}\n", .{err});
+                    std.process.exit(1);
+                };
             }
         }
     }
@@ -128,6 +135,7 @@ pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_
 // this will be called by client to generate data
 fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
     var c = ci.client[thread_id];
+    std.debug.print("sizeof: {d}\n", .{req.request.items.len});
     while (true) {
         const idx = req.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
         if (idx >= c.repeat) {
@@ -142,18 +150,19 @@ fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usiz
     }
 }
 
-fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
+fn parseBody(
+    c: *Client,
+    req: *Shared,
+    idx: usize,
+    io: std.Io,
+) !void {
     var fetch_options: std.http.Client.FetchOptions = undefined;
+
     const allocator = req.arena.allocator();
-    _ = idx;
 
     var body: ?[]const u8 = c.request.body;
-    const host = c.request.host orelse {
-        std.log.err("host not found you need a host idiot\n", .{});
-        std.process.exit(1);
-    };
-
     const uri_string = try std.mem.concat(allocator, u8, &.{ c.uri, c.request.path });
+    std.debug.print("uri string: {s}\n", .{uri_string});
 
     std.debug.print("pref: {?s}\n", .{body});
     if (c.fuzz) body = handleSpecial(c.request.body, io, allocator) orelse body;
@@ -162,15 +171,15 @@ fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
     fetch_options.method = c.request.method;
     fetch_options.headers.content_type = .{ .override = c.request.content_type };
     fetch_options.location = .{ .url = uri_string };
-    fetch_options.headers.user_agent = .{ .override = c.request.agent };
-    fetch_options.headers.host = .{ .override = host };
+    fetch_options.headers.user_agent = .{ .override = uri_string };
+    fetch_options.headers.host = .{ .override = c.request.host };
     fetch_options.payload = body;
 
     try req.mutex.lock(io);
     {
         defer req.mutex.unlock(io);
 
-        try req.*.request.append(allocator, fetch_options);
+        req.request.items[idx] = fetch_options;
     }
 }
 

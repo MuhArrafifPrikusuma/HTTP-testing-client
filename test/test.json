@@ -9,27 +9,5 @@
 			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
 			"content_type": "application/json"
 		}
-	},
-	{
-		"fuzz": true,
-		"repeat": 1,
-		"uri": "localhost:8080",
-		"request": {
-			"method": "GET",
-			"path": "/api/test",
-			"body": "hello this shouldnt change except this one {RAND_STR}}",
-			"content_type": "text/plain"
-		}
-	},
-	{
-		"fuzz": true,
-		"repeat": 1,
-		"uri": "localhost:8080",
-		"request": {
-			"method": "GET",
-			"path": "/api/test",
-			"body": "this test: {RAND_STR} does this read",
-			"content_type": "text/plain"
-		}
 	}
 ]

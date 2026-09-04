@@ -166,12 +166,9 @@ fn parseBody(c: *Client, req: *Shared, idx: usize, io: std.Io) !void {
     fetch_options.headers.host = .{ .override = host };
     fetch_options.payload = body;
 
-    std.log.debug("why isn't it here\n", .{});
     try req.mutex.lock(io);
     {
-        std.log.debug("it's locked\n", .{});
         defer req.mutex.unlock(io);
-        std.log.debug("it's unlocked\n", .{});
 
         try req.*.request.append(allocator, fetch_options);
     }
@@ -206,7 +203,8 @@ const Rules = struct {
 };
 
 /// search and replaces special indicator, return new formatted slice if found return null if not
-/// NOTE: invalid specials are just regular string and won't be processes nor will it throw an error
+/// NOTE: this seems fine for now just don't type stupid shit for the json input and it will be fine
+/// there are still rooms for improvement and this can be far better
 fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator) ?[]const u8 {
     const content_string = content orelse return null;
     var start: usize = 0;
@@ -217,7 +215,7 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
 
     var new_content: ?[]const u8 = null;
     while (true) {
-        const first_idx = if (std.mem.find(u8, content_string[start..], "{")) |found_idx|
+        var first_idx = if (std.mem.find(u8, content_string[start..], "{")) |found_idx|
             found_idx + current_offset
         else
             break;
@@ -237,14 +235,15 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
 
         start = last_idx;
 
-        if (do_have_middle) |yes_do| if (yes_do < last_idx) continue;
+        if (do_have_middle) |yes_do| if (yes_do < last_idx) {
+            first_idx = yes_do + 1;
+        };
 
         idx = .{
             .start = first_idx,
             .end = last_idx,
         };
 
-        // NOTE: find a way to not discard the all stuff after last {RAND}
         if (new_content) |ctn| {
             new_content = std.mem.concat(
                 allocator,

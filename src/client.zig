@@ -8,18 +8,22 @@ pub fn clientNet(
     group: *std.Io.Group,
     shared: *Req.Shared,
     thread_id: usize,
-) !void {
+) void {
     const allocator = shared.arena.allocator();
     _ = group;
-    _ = thread_id;
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
-    _ = ci;
     defer client.deinit();
-    // var i: usize = 0;
-    // while (i < 1000) : (i += 1) {
-    //     _ = shared.read_counter.append(allocator, .init(0)) catch |err| {
-    //         std.log.err("{any}\n", .{err});
-    //         std.process.exit(1);
-    //     };
-    // }
+    while (true) {
+        const options = shared.read(io, thread_id, ci.client[thread_id].repeat) catch {
+            break;
+        };
+        const result = client.fetch(options.*) catch |err| {
+            std.log.err("Client request fetch: {any}\n", .{err});
+            continue;
+        };
+        std.debug.print("do we get here\n", .{});
+        if (result.status.phrase()) |res| {
+            std.debug.print("test result: {s}\n", .{res});
+        }
+    }
 }

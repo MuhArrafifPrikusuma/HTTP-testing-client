@@ -2,10 +2,10 @@
 	{
 		"fuzz": true,
 		"repeat": 1,
-		"uri": "localhost:8080",
+		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
-			"path": "/api/test",
+			"path": "/",
 			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
 			"content_type": "application/json"
 		}

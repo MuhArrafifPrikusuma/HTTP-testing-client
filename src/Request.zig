@@ -63,8 +63,7 @@ pub const Shared = struct {
     read_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
     write_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
     // if null sleep the thread for 5ms
-    request: std.ArrayList(?std.http.Client.FetchOptions) = .empty,
-    mutex: std.Io.Mutex = .init,
+    request: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)) = .empty,
 
     arena: std.heap.ArenaAllocator,
 
@@ -78,7 +77,6 @@ pub const Shared = struct {
 
         self.* = .{
             .arena = arena,
-            .mutex = .init,
         };
 
         // NOTE: CHANGE THE WAY TO RESIZE ARRAY LIST DON'T RESIZE IT ONE BY ONE ADD LIKE 5 OR 10 AND MAKE THE VALUE NULL
@@ -92,7 +90,12 @@ pub const Shared = struct {
     }
 
     /// return SharedErr.ReadComplete when there is no more request string to process
-    pub fn read(self: *Shared, io: std.Io, thread_id: usize, max: u32) SharedErr!*const std.http.Client.FetchOptions {
+    pub fn read(
+        self: *Shared,
+        io: std.Io,
+        thread_id: usize,
+        max: u32,
+    ) SharedErr!*const std.http.Client.FetchOptions {
         const idx: usize = self.read_counter.items[thread_id].fetchAdd(1, .acq_rel);
         // std.debug.print("now reading: {d}\n", .{idx});
         // std.debug.print("max: {d}\n", .{max});
@@ -102,14 +105,10 @@ pub const Shared = struct {
 
             // std.debug.print("what is it {?any}\n", .{self.request.items[idx]});
 
-            if (self.request.items[idx]) |req| {
-                // FIXME: i don't know how can i be this bad but somehow this print function is the one
-                // that makes it work and without it the program will simply freezes
-                std.debug.print("", .{}); // <WARNING: WAAAAAAAAAAAAAAAAHHHHHHHHHHH!
-                return &req;
+            if (self.request.items[idx].load(.acquire)) |req| {
+                return req;
             } else {
-                std.debug.print("ever gone here?\n", .{});
-                std.Io.sleep(io, std.Io.Duration.fromMilliseconds(5), std.Io.Clock.real) catch |err| {
+                std.Io.sleep(io, std.Io.Duration.fromMilliseconds(1), std.Io.Clock.real) catch |err| {
                     std.log.err("sleep: {any}\n", .{err});
                     std.process.exit(1);
                 };
@@ -140,7 +139,6 @@ pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_
 // this will be called by client to generate data
 fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
     var c = ci.client[thread_id];
-    std.debug.print("sizeof: {d}\n", .{req.request.items.len});
     while (true) {
         const idx = req.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
         if (idx >= c.repeat) {
@@ -161,9 +159,9 @@ fn parseBody(
     idx: usize,
     io: std.Io,
 ) !void {
-    var fetch_options: std.http.Client.FetchOptions = undefined;
-
     const allocator = req.arena.allocator();
+
+    const fetch_options = try allocator.create(std.http.Client.FetchOptions);
 
     var body: ?[]const u8 = c.request.body;
     const uri_string = try std.mem.concat(allocator, u8, &.{ c.uri, c.request.path });
@@ -173,23 +171,23 @@ fn parseBody(
     if (c.fuzz) body = handleSpecial(c.request.body, io, allocator) orelse body;
     // std.debug.print("after: {?s}\n", .{body});
     // pass request line
-    fetch_options.method = c.request.method orelse {
+    fetch_options.*.method = c.request.method orelse {
         std.log.err("Method field is required!\n", .{});
         std.process.exit(1);
     };
-    fetch_options.headers.content_type = .{ .override = c.request.content_type };
-    fetch_options.location = .{ .url = uri_string };
-    fetch_options.headers.user_agent = .{ .override = uri_string };
-    fetch_options.headers.host = .{ .override = c.request.host };
-    fetch_options.payload = body;
-    fetch_options.keep_alive = true;
+    fetch_options.*.headers.content_type = .{ .override = c.request.content_type };
+    fetch_options.*.location = .{ .url = uri_string };
+    fetch_options.*.headers.user_agent = .{ .override = uri_string };
+    fetch_options.*.headers.host = .{ .override = c.request.host };
+    fetch_options.*.payload = body;
+    fetch_options.*.keep_alive = true;
 
-    try req.mutex.lock(io);
-    {
-        defer req.mutex.unlock(io);
+    // try req.mutex.lock(io);
+    // {
+    // defer req.mutex.unlock(io);
 
-        req.request.items[idx] = fetch_options;
-    }
+    _ = req.request.items[idx].swap(fetch_options, .acq_rel);
+    // }
 }
 
 const SpecialTags = enum {
@@ -343,7 +341,7 @@ fn rebuildContent(
     const content = iter.next() orelse return null;
 
     // make this better later
-    if (content.len > ~@as(u8, 0)) return null;
+    if (content.len > std.math.maxInt(u8)) return null;
 
     var buf: [256]u8 = undefined;
     const tag_name = std.ascii.upperString(&buf, content);

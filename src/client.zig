@@ -15,6 +15,7 @@ pub fn clientNet(
     defer client.deinit();
     while (true) {
         const options = shared.read(io, thread_id, ci.client[thread_id].repeat) catch {
+            std.log.debug("thread: {d} finished", .{thread_id});
             break;
         };
         const result = client.fetch(options.*) catch |err| {

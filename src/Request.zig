@@ -192,12 +192,30 @@ fn parseBody(
         .keep_alive = true,
         .payload = body,
     };
-    // try req.mutex.lock(io);
-    // {
-    // defer req.mutex.unlock(io);
+
+    const allow_payload = p: {
+        if (fetch_options.method) |method| {
+            switch (method) {
+                .GET, .HEAD => break :p false,
+                .CONNECT,
+                .DELETE,
+                .OPTIONS,
+                .PATCH,
+                .POST,
+                .PUT,
+                .QUERY,
+                .TRACE,
+                => break :p true,
+            }
+        } else {
+            std.log.err("No method found!\n", .{});
+            std.process.exit(1);
+        }
+    };
+
+    if (!allow_payload) fetch_options.payload = null;
 
     _ = opt.options.items[idx].swap(fetch_options, .acq_rel);
-    // }
 }
 
 const SpecialTags = enum {

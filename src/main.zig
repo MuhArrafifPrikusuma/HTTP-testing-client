@@ -28,7 +28,7 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     }
 
     for (ci.client, 0..) |_, i| {
-        shared.request.appendNTimes(allocator, .init(null), @as(usize, ci.client[i].repeat)) catch |err| {
+        shared.options.appendNTimes(allocator, .init(null), @as(usize, ci.client[i].repeat)) catch |err| {
             std.log.err("not enough memory: {any}\n", .{err});
             std.process.exit(1);
         };

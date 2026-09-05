@@ -63,7 +63,7 @@ pub const Shared = struct {
     read_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
     write_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
     // if null sleep the thread for 5ms
-    request: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)) = .empty,
+    options: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)) = .empty,
 
     arena: std.heap.ArenaAllocator,
 
@@ -85,7 +85,7 @@ pub const Shared = struct {
 
     pub fn deinit(self: *Shared) void {
         const allocator = self.arena.allocator();
-        self.request.deinit(allocator);
+        self.options.deinit(allocator);
         self.arena.deinit();
     }
 
@@ -105,8 +105,8 @@ pub const Shared = struct {
 
             // std.debug.print("what is it {?any}\n", .{self.request.items[idx]});
 
-            if (self.request.items[idx].load(.acquire)) |req| {
-                return req;
+            if (self.options.items[idx].load(.acquire)) |opt| {
+                return opt;
             } else {
                 std.Io.sleep(io, std.Io.Duration.fromMilliseconds(1), std.Io.Clock.real) catch |err| {
                     std.log.err("sleep: {any}\n", .{err});
@@ -122,7 +122,7 @@ pub const Shared = struct {
 // NOTE: determine whether it wants random data for fixed data and if it's random then take the struct see the requirements
 // and then generate data on the fly when a thread requested for it
 
-pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
+pub fn initBuilder(ci: *const ClientInterface, io: std.Io, opt: *Shared, thread_id: usize) void {
     // const allocator = req.arena.allocator();
     // const initial_value: std.atomic.Value(usize) = .init(0);
     //
@@ -133,33 +133,33 @@ pub fn initBuilder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_
     //
     // req.write_counter.appendAssumeCapacity(initial_value);
 
-    builder(ci, io, req, thread_id);
+    builder(ci, io, opt, thread_id);
 }
 
 // this will be called by client to generate data
-fn builder(ci: *const ClientInterface, io: std.Io, req: *Shared, thread_id: usize) void {
+fn builder(ci: *const ClientInterface, io: std.Io, opt: *Shared, thread_id: usize) void {
     var c = ci.client[thread_id];
     while (true) {
-        const idx = req.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
+        const idx = opt.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
         if (idx >= c.repeat) {
             // NOTE: this sub is only for debug purposes
-            _ = req.write_counter.items[thread_id].fetchSub(1, .acq_rel);
+            _ = opt.write_counter.items[thread_id].fetchSub(1, .acq_rel);
             break;
         }
 
         // std.log.debug("thread id:{d}::{d}\n", .{ thread_id, idx });
 
-        parseBody(&c, req, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
+        parseBody(&c, opt, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
     }
 }
 
 fn parseBody(
     c: *Client,
-    req: *Shared,
+    opt: *Shared,
     idx: usize,
     io: std.Io,
 ) !void {
-    const allocator = req.arena.allocator();
+    const allocator = opt.arena.allocator();
 
     const fetch_options = try allocator.create(std.http.Client.FetchOptions);
 
@@ -175,18 +175,28 @@ fn parseBody(
         std.log.err("Method field is required!\n", .{});
         std.process.exit(1);
     };
-    fetch_options.*.headers.content_type = .{ .override = c.request.content_type };
-    fetch_options.*.location = .{ .url = uri_string };
-    fetch_options.*.headers.user_agent = .{ .override = uri_string };
-    fetch_options.*.headers.host = .{ .override = c.request.host };
-    fetch_options.*.payload = body;
-    fetch_options.*.keep_alive = true;
 
+    fetch_options.* = .{
+        .headers = .{
+            .content_type = .{ .override = c.request.content_type },
+            .user_agent = .{ .override = c.request.agent },
+            .host = .{ .override = c.request.host },
+        },
+
+        .method = c.request.method orelse {
+            std.log.err("Method field is required!\n", .{});
+            std.process.exit(1);
+        },
+
+        .location = .{ .url = uri_string },
+        .keep_alive = true,
+        .payload = body,
+    };
     // try req.mutex.lock(io);
     // {
     // defer req.mutex.unlock(io);
 
-    _ = req.request.items[idx].swap(fetch_options, .acq_rel);
+    _ = opt.options.items[idx].swap(fetch_options, .acq_rel);
     // }
 }
 

@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
     });
 
     if (optimize == .debug) {
-        exe.root_module.sanitize_thread = true;
+        // exe.root_module.sanitize_thread = true;
     }
     if (optimize == .fast or optimize == .small) {
         exe.root_module.strip = true;

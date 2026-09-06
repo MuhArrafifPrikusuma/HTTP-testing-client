@@ -1,7 +1,7 @@
 [
 	{
 		"fuzz": true,
-		"repeat": 250,
+		"repeat": 10000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -12,7 +12,7 @@
 	},
 	{
 		"fuzz": false,
-		"repeat": 250,
+		"repeat": 10000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -23,7 +23,7 @@
 	},
 	{
 		"fuzz": false,
-		"repeat": 250,
+		"repeat": 10000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -34,7 +34,7 @@
 	},
 	{
 		"fuzz": false,
-		"repeat": 250,
+		"repeat": 10000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -45,7 +45,62 @@
 	},
 	{
 		"fuzz": false,
-		"repeat": 250,
+		"repeat": 10000,
+		"uri": "http://localhost:8080",
+		"request": {
+			"method": "GET",
+			"path": "/",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": false,
+		"repeat": 10000,
+		"uri": "http://localhost:8080",
+		"request": {
+			"method": "GET",
+			"path": "/",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": false,
+		"repeat": 10000,
+		"uri": "http://localhost:8080",
+		"request": {
+			"method": "GET",
+			"path": "/",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": false,
+		"repeat": 10000,
+		"uri": "http://localhost:8080",
+		"request": {
+			"method": "GET",
+			"path": "/",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": false,
+		"repeat": 10000,
+		"uri": "http://localhost:8080",
+		"request": {
+			"method": "GET",
+			"path": "/",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": false,
+		"repeat": 10000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",

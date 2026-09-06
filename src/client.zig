@@ -22,6 +22,8 @@ pub fn clientNet(
             std.log.err("Client request fetch: {any}\n", .{err});
             continue;
         };
+        allocator.destroy(opt);
+        // NOTE: right now focus on making response and response checker and then rules
         if (result.status.phrase()) |res| {
             _ = res;
             // std.debug.print("test result: {s}\n", .{res});

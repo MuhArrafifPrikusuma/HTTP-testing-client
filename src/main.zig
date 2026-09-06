@@ -13,6 +13,8 @@ pub fn main(init: std.process.Init) !void {
 
 fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     const shared = Req.Shared.init(std.heap.smp_allocator) catch @panic("failed to initiate tasks");
+    defer shared.deinit();
+
     const allocator = shared.arena.allocator();
     // get client fields from parsed json
 
@@ -41,5 +43,4 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     }
 
     group.await(io) catch |err| std.log.err("{any}\n", .{err});
-    std.log.debug("{any}\n", .{shared.write_counter.items});
 }

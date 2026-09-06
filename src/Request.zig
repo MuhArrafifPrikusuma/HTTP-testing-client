@@ -24,8 +24,11 @@ const Request = struct {
     host: []const u8 = "127.0.0.1", // <- NOTE: replace this with client host after this
     agent: []const u8 = "idk-for-now/tester", // <- automatically filled
     body: ?[]const u8 = null,
+
     content_type: []const u8 = "text/plain",
     accept_type: ?[]const u8 = null,
+
+    keep_alive: bool = true,
 };
 
 /// initiate client arena allocator
@@ -189,7 +192,7 @@ fn parseBody(
         },
 
         .location = .{ .url = uri_string },
-        .keep_alive = true,
+        .keep_alive = c.request.keep_alive,
         .payload = body,
     };
 
@@ -197,15 +200,7 @@ fn parseBody(
         if (fetch_options.method) |method| {
             switch (method) {
                 .GET, .HEAD => break :p false,
-                .CONNECT,
-                .DELETE,
-                .OPTIONS,
-                .PATCH,
-                .POST,
-                .PUT,
-                .QUERY,
-                .TRACE,
-                => break :p true,
+                else => break :p true,
             }
         } else {
             std.log.err("No method found!\n", .{});
@@ -235,7 +230,6 @@ const Value = union(enum) {
 };
 
 const SNIndex = struct {
-    read_start: usize = 0, // <- for the very start of a replacement
     start: usize = 0,
     end: usize = 0,
 };
@@ -288,26 +282,22 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
             .end = last_idx,
         };
 
+        const new_string = rebuildContent(
+            content_string[idx.start + 1 .. idx.end],
+            content_string,
+            &idx,
+            io,
+            allocator,
+        ) catch |err| {
+            std.log.err("{any}\n", .{err});
+            continue;
+        } orelse content_string[idx.start .. idx.end + 1];
+
         if (new_content) |ctn| {
             new_content = std.mem.concat(
                 allocator,
                 u8,
-
-                &.{
-                    ctn,
-                    content_string[prev_offset + 1 .. idx.start],
-
-                    rebuildContent(
-                        content_string[idx.start + 1 .. idx.end],
-                        content_string,
-                        &idx,
-                        io,
-                        allocator,
-                    ) catch |err| {
-                        std.log.err("{any}\n", .{err});
-                        continue;
-                    } orelse content_string[idx.start .. idx.end + 1],
-                },
+                &.{ ctn, content_string[prev_offset + 1 .. idx.start], new_string },
             ) catch |err| {
                 std.log.err("{any}\n", .{err});
                 std.process.exit(1);
@@ -317,25 +307,13 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
                 allocator,
                 u8,
 
-                &.{
-                    content_string[0..idx.start],
-
-                    rebuildContent(
-                        content_string[idx.start + 1 .. idx.end],
-                        content_string,
-                        &idx,
-                        io,
-                        allocator,
-                    ) catch |err| {
-                        std.log.err("{any}\n", .{err});
-                        continue;
-                    } orelse content_string[idx.start + 1 .. idx.end],
-                },
+                &.{ content_string[0..idx.start], new_string },
             ) catch |err| {
                 std.log.err("{any}\n", .{err});
                 std.process.exit(1);
             };
         }
+        allocator.free(new_string);
 
         prev_offset = last_idx;
     }
@@ -423,7 +401,7 @@ fn randNumbers(comptime T: type, random: std.Random) Value {
     switch (T) {
         i64 => {
             // NOTE: do the actual thing later
-            value = .{ .int = random.intRangeLessThan(i64, 0, 65553) };
+            value = .{ .int = random.intRangeLessThan(i64, std.math.minInt(i64), std.math.maxInt(i64)) };
         },
         f64 => {},
         else => unreachable,

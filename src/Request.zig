@@ -2,6 +2,8 @@ const std = @import("std");
 
 const Task = @import("Task.zig");
 
+const Allocator = std.mem.Allocator;
+
 pub const Client = struct {
     // fuzz = true for auto generate data
     fuzz: bool = false,
@@ -38,7 +40,7 @@ pub const ClientInterface = struct {
     arena: std.heap.ArenaAllocator,
     client: []Client,
 
-    pub fn init(backing_allocator: std.mem.Allocator) !*ClientInterface {
+    pub fn init(backing_allocator: Allocator) !*ClientInterface {
         var arena = std.heap.ArenaAllocator.init(backing_allocator);
         errdefer arena.deinit();
 
@@ -61,7 +63,7 @@ pub const ClientInterface = struct {
 // NOTE: determine whether it wants random data for fixed data and if it's random then take the struct see the requirements
 // and then generate data on the fly when a thread requested for it
 
-pub fn initBuilder(ci: *const ClientInterface, io: std.Io, task: *Task, thread_id: usize) void {
+pub fn initBuilder(io: std.Io, ci: *const ClientInterface, task: *Task, thread_id: usize) void {
     builder(ci, io, task, thread_id);
 }
 
@@ -160,7 +162,7 @@ const Rules = struct {
 /// search and replaces special indicator, return new formatted slice if found return null if not
 /// NOTE: this seems fine for now just don't type stupid shit for the json input and it will be fine
 /// there are still rooms for improvement and this can be far better
-fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator) ?[]const u8 {
+fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: Allocator) ?[]const u8 {
     const content_string = content orelse return null;
     var start: usize = 0;
     var idx: SNIndex = .{};
@@ -259,7 +261,7 @@ fn rebuildContent(
     orig: []const u8,
     idx: *const SNIndex,
     io: std.Io,
-    allocator: std.mem.Allocator,
+    allocator: Allocator,
 ) !?[]const u8 {
     // NOTE: don't forget to handle rules here and on fuzzer too
     var iter = std.mem.splitScalar(u8, special_content, ';');

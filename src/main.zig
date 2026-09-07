@@ -2,7 +2,9 @@ const std = @import("std");
 const argument = @import("arguments.zig");
 const json = @import("json.zig");
 const client = @import("client.zig");
+
 const Req = @import("Request.zig");
+const Task = @import("Task.zig");
 
 pub fn main(init: std.process.Init) !void {
     argument.handleArgs(init.minimal.args, init.io);
@@ -12,25 +14,25 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
-    const shared = Req.Shared.init(std.heap.smp_allocator) catch @panic("failed to initiate tasks");
-    defer shared.deinit();
+    const task = Task.init(std.heap.smp_allocator) catch @panic("failed to initiate tasks");
+    defer task.deinit();
 
-    const allocator = shared.arena.allocator();
+    const allocator = task.arena.allocator();
     // get client fields from parsed json
 
     const total_task = ci.client.len;
 
-    try shared.write_counter.ensureUnusedCapacity(allocator, total_task);
-    try shared.read_counter.ensureUnusedCapacity(allocator, total_task);
+    try task.write_counter.ensureUnusedCapacity(allocator, total_task);
+    try task.read_counter.ensureUnusedCapacity(allocator, total_task);
 
     var index: usize = 0;
     while (index < total_task) : (index += 1) {
-        shared.write_counter.appendAssumeCapacity(.init(0));
-        shared.read_counter.appendAssumeCapacity(.init(0));
+        task.write_counter.appendAssumeCapacity(.init(0));
+        task.read_counter.appendAssumeCapacity(.init(0));
     }
 
     for (ci.client, 0..) |_, i| {
-        shared.options.appendNTimes(allocator, .init(null), @as(usize, ci.client[i].repeat)) catch |err| {
+        task.options.appendNTimes(allocator, .init(null), @as(usize, ci.client[i].repeat)) catch |err| {
             std.log.err("not enough memory: {any}\n", .{err});
             std.process.exit(1);
         };
@@ -38,9 +40,10 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
 
     var group: std.Io.Group = .init;
     for (ci.client, 0..) |_, i| {
-        try group.concurrent(io, Req.initBuilder, .{ ci, io, shared, i });
-        try group.concurrent(io, client.clientNet, .{ io, ci, &group, shared, i });
+        try group.concurrent(io, Req.initBuilder, .{ ci, io, task, i });
+        try group.concurrent(io, client.clientNet, .{ io, ci, task, i });
     }
 
     group.await(io) catch |err| std.log.err("{any}\n", .{err});
+    ci.deinit();
 }

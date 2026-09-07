@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const Task = @import("Task.zig");
+
 pub const Client = struct {
     // fuzz = true for auto generate data
     fuzz: bool = false,
@@ -51,133 +53,48 @@ pub const ClientInterface = struct {
         return self;
     }
 
-    pub fn deinit(self: *ClientInterface) !void {
+    pub fn deinit(self: *ClientInterface) void {
         self.arena.deinit();
     }
-};
-
-const SharedErr = error{
-    ReadComplete,
-};
-
-/// NOTE: if a thread finished it should free all of memory they use for other slices, use loop with allocator free for this
-pub const Shared = struct {
-    // use counter for indexing
-    read_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
-    write_counter: std.ArrayList(std.atomic.Value(usize)) = .empty,
-    // if null sleep the thread for 5ms
-    options: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)) = .empty,
-
-    arena: std.heap.ArenaAllocator,
-
-    pub fn init(backing_allocator: std.mem.Allocator) !*Shared {
-        var arena = std.heap.ArenaAllocator.init(backing_allocator);
-        errdefer arena.deinit();
-
-        const allocator = arena.allocator();
-
-        const self = try allocator.create(Shared);
-
-        self.* = .{
-            .arena = arena,
-        };
-
-        // NOTE: CHANGE THE WAY TO RESIZE ARRAY LIST DON'T RESIZE IT ONE BY ONE ADD LIKE 5 OR 10 AND MAKE THE VALUE NULL
-        return self;
-    }
-
-    pub fn deinit(self: *Shared) void {
-        const allocator = self.arena.allocator();
-        self.options.deinit(allocator);
-        self.arena.deinit();
-    }
-
-    /// return SharedErr.ReadComplete when there is no more request string to process
-    pub fn read(
-        self: *Shared,
-        io: std.Io,
-        thread_id: usize,
-        max: u32,
-    ) SharedErr!*const std.http.Client.FetchOptions {
-        const idx: usize = self.read_counter.items[thread_id].fetchAdd(1, .acq_rel);
-        // std.debug.print("now reading: {d}\n", .{idx});
-        // std.debug.print("max: {d}\n", .{max});
-
-        while (true) {
-            if (idx >= max) return SharedErr.ReadComplete;
-
-            // std.debug.print("what is it {?any}\n", .{self.request.items[idx]});
-
-            if (self.options.items[idx].load(.acquire)) |opt| {
-                return opt;
-            } else {
-                std.Io.sleep(io, std.Io.Duration.fromMilliseconds(1), std.Io.Clock.real) catch |err| {
-                    std.log.err("sleep: {any}\n", .{err});
-                    std.process.exit(1);
-                };
-            }
-        }
-    }
-
-    // NOTE: writer should be outside of this right in requestHandler
 };
 
 // NOTE: determine whether it wants random data for fixed data and if it's random then take the struct see the requirements
 // and then generate data on the fly when a thread requested for it
 
-pub fn initBuilder(ci: *const ClientInterface, io: std.Io, opt: *Shared, thread_id: usize) void {
-    // const allocator = req.arena.allocator();
-    // const initial_value: std.atomic.Value(usize) = .init(0);
-    //
-    // req.write_counter.ensureUnusedCapacity(allocator, 1) catch |err| {
-    //     std.log.err("failed to allocate memory: {any}\n", .{err});
-    //     std.process.exit(1);
-    // };
-    //
-    // req.write_counter.appendAssumeCapacity(initial_value);
-
-    builder(ci, io, opt, thread_id);
+pub fn initBuilder(ci: *const ClientInterface, io: std.Io, task: *Task, thread_id: usize) void {
+    builder(ci, io, task, thread_id);
 }
 
 // this will be called by client to generate data
-fn builder(ci: *const ClientInterface, io: std.Io, opt: *Shared, thread_id: usize) void {
+fn builder(ci: *const ClientInterface, io: std.Io, task: *Task, thread_id: usize) void {
     var c = ci.client[thread_id];
     while (true) {
-        const idx = opt.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
+        const idx = task.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
         if (idx >= c.repeat) {
-            // NOTE: this sub is only for debug purposes
-            _ = opt.write_counter.items[thread_id].fetchSub(1, .acq_rel);
             break;
         }
 
-        // std.log.debug("thread id:{d}::{d}\n", .{ thread_id, idx });
-
-        parseBody(&c, opt, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
+        parseBody(&c, task, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
     }
 }
 
 fn parseBody(
     c: *Client,
-    opt: *Shared,
+    task: *Task,
     idx: usize,
     io: std.Io,
 ) !void {
-    const allocator = opt.arena.allocator();
+    const allocator = task.arena.allocator();
 
     const fetch_options = try allocator.create(std.http.Client.FetchOptions);
 
     var body: ?[]const u8 = c.request.body;
     const uri_string = try std.mem.concat(allocator, u8, &.{ c.uri, c.request.path });
-    // std.debug.print("uri string: {s}\n", .{uri_string});
 
-    // std.debug.print("pref: {?s}\n", .{body});
+    if (c.request.method) |method| {
+        if (method == .GET or method == .HEAD) c.fuzz = false;
+    }
     if (c.fuzz) body = handleSpecial(c.request.body, io, allocator) orelse body;
-    // std.debug.print("after: {?s}\n", .{body});
-    // pass request line
-    fetch_options.*.method = c.request.method orelse {
-        std.log.err("Method field is required!\n", .{});
-        std.process.exit(1);
-    };
 
     fetch_options.* = .{
         .headers = .{
@@ -210,7 +127,7 @@ fn parseBody(
 
     if (!allow_payload) fetch_options.payload = null;
 
-    _ = opt.options.items[idx].swap(fetch_options, .acq_rel);
+    _ = task.options.items[idx].swap(fetch_options, .acq_rel);
 }
 
 const SpecialTags = enum {
@@ -252,6 +169,8 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
     var prev_offset: usize = 0;
 
     var new_content: ?[]const u8 = null;
+
+    // NOTE: this is temporary make it better later
     while (true) {
         var first_idx = if (std.mem.find(u8, content_string[start..], "{")) |found_idx|
             found_idx + current_offset
@@ -273,8 +192,8 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: std.mem.Allocator)
 
         start = last_idx;
 
-        if (do_have_middle) |yes_do| if (yes_do < last_idx) {
-            first_idx = yes_do + 1;
+        if (do_have_middle) |mid_idx| if (mid_idx < last_idx) {
+            first_idx = mid_idx + 1;
         };
 
         idx = .{

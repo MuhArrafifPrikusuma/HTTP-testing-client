@@ -1,9 +1,9 @@
 //! handle network io etc
 const std = @import("std");
+const res = @import("response.zig");
 
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
-const Res = @import("Response.zig");
 
 pub fn clientNet(
     io: std.Io,
@@ -15,22 +15,20 @@ pub fn clientNet(
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
     defer client.deinit();
 
-    var response_writer = std.Io.Writer.Allocating.init(allocator);
-
     while (true) {
         const opt = task.read(io, thread_id, ci.client[thread_id].repeat) catch {
             std.log.debug("thread: {d} finished", .{thread_id});
             break;
         };
-        opt.*.response_writer = &response_writer.writer;
 
         const response = client.fetch(opt.*) catch |err| {
+            allocator.destroy(opt);
             std.log.err("Client request fetch: {any}\n", .{err});
             continue;
         };
         allocator.destroy(opt);
 
-        Res.responseHandler(task, io, response.status.class(), response_writer.written());
+        res.storeResponse(task, io, response.status.class());
 
         if (response.status.class() == .success) {
             // std.debug.print("status: {s}\n", .{shared.response_writer.written()});

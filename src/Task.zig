@@ -1,6 +1,5 @@
 const std = @import("std");
-
-const Res = @import("Response.zig");
+const res = @import("response.zig");
 
 const Self = @This();
 
@@ -9,38 +8,41 @@ const SharedErr = error{
 };
 
 /// NOTE: if a thread finished it should free all of memory they use for other slices, use loop with allocator free for this
-mutex: std.Io.Mutex = .init,
+mutex: std.Io.Mutex,
 arena: std.heap.ArenaAllocator,
 
-// use counter for indexing
+// use counter for atomic indexing
 read_counter: std.ArrayList(std.atomic.Value(usize)),
 write_counter: std.ArrayList(std.atomic.Value(usize)),
-// if null sleep the thread for 5ms
+
 options: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)),
-response: std.ArrayList(Res.Response),
+
+/// status accumulator to store how many response with that status class
+response_status_accu: std.AutoHashMap(std.http.Status.Class, usize),
+response: std.AutoHashMap(usize, res.Response),
 
 pub fn init(backing_allocator: std.mem.Allocator) !*Self {
-    var arena_tmp = std.heap.ArenaAllocator.init(backing_allocator);
-    errdefer arena_tmp.deinit();
+    var start_arena = std.heap.ArenaAllocator.init(backing_allocator);
+    errdefer start_arena.deinit();
 
-    const allocator = arena_tmp.allocator();
+    const bootstrap = start_arena.allocator();
 
-    const self = try allocator.create(Self);
+    const self = try bootstrap.create(Self);
 
-    self.* = .{
-        .arena = arena_tmp,
-        .response = .empty,
-        .options = .empty,
-        .read_counter = .empty,
-        .write_counter = .empty,
-    };
+    self.*.arena = start_arena;
+    const allocator = self.arena.allocator();
+
+    self.*.mutex = .init;
+    self.*.options = .empty;
+    self.*.read_counter = .empty;
+    self.*.write_counter = .empty;
+    self.*.response_status_accu = .init(allocator);
+    self.*.response = .init(allocator);
 
     return self;
 }
 
 pub fn deinit(self: *Self) void {
-    const allocator = self.arena.allocator();
-    self.options.deinit(allocator);
     self.arena.deinit();
 }
 
@@ -50,7 +52,7 @@ pub fn read(
     io: std.Io,
     thread_id: usize,
     max: u32,
-) SharedErr!*std.http.Client.FetchOptions {
+) SharedErr!*const std.http.Client.FetchOptions {
     const idx: usize = self.read_counter.items[thread_id].fetchAdd(1, .acq_rel);
 
     while (true) {
@@ -66,5 +68,3 @@ pub fn read(
         }
     }
 }
-
-// NOTE: writer should be outside of this right in requestHandler

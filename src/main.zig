@@ -40,7 +40,7 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
 
     var group: std.Io.Group = .init;
     for (ci.client, 0..) |_, i| {
-        try group.concurrent(io, Req.initBuilder, .{ ci, io, task, i });
+        try group.concurrent(io, Req.initBuilder, .{ io, ci, task, i });
         try group.concurrent(io, client.clientNet, .{ io, ci, task, i });
     }
 

@@ -46,4 +46,10 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
 
     group.await(io) catch |err| std.log.err("{any}\n", .{err});
     ci.deinit();
+    var i: usize = 0;
+    if (task.response.get(.success)) |list| {
+        while (i < list.id) : (i += 1) {
+            std.log.debug("what we get: id:{d}\ncontent:{any}\n", .{ i, list.response.items[i] });
+        }
+    }
 }

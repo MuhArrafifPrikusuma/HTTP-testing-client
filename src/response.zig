@@ -5,8 +5,7 @@ const http = std.http;
 const Allocator = std.mem.Allocator;
 
 const Response = struct {
-    // body: []const u8,
-    status: std.http.Status.Class,
+    body: []const u8 = "dummy body",
 };
 
 pub const ResponseMap = struct {
@@ -18,6 +17,7 @@ pub fn storeResponse(
     task: *Task,
     io: std.Io,
     status: http.Status.Class,
+    max: u32,
 ) void {
     const allocator = task.arena.allocator();
     // NOTE: make response body later after i figure out how to make the response writer thread safe
@@ -27,23 +27,22 @@ pub fn storeResponse(
     };
     defer task.mutex.unlock(io);
 
-    storeInMap(task, status, allocator) catch |err| {
+    storeInMap(task, status, max, allocator) catch |err| {
         std.log.err("Failed to allocate memory: {any}\n", .{err});
         return;
     };
 }
 
-fn storeInMap(task: *Task, status: std.http.Status.Class, allocator: Allocator) !void {
+fn storeInMap(task: *Task, status: std.http.Status.Class, max: u32, allocator: Allocator) !void {
     if (task.response.count() == 0)
         try task.response.ensureTotalCapacity(5);
 
     if (task.response.getPtr(status)) |list| {
         if (list.id >= list.response.items.len) {
-            const reserve_cap = if (list.response.items.len == 0) 10 else list.response.items.len;
-            try list.response.ensureUnusedCapacity(allocator, reserve_cap);
+            try list.response.ensureUnusedCapacity(allocator, max);
         }
 
-        list.response.appendAssumeCapacity(.{ .status = status });
+        list.response.appendAssumeCapacity(.{});
 
         list.id += 1;
 

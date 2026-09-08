@@ -63,12 +63,39 @@ pub const ClientInterface = struct {
 // NOTE: determine whether it wants random data for fixed data and if it's random then take the struct see the requirements
 // and then generate data on the fly when a thread requested for it
 
-pub fn initBuilder(io: std.Io, ci: *const ClientInterface, task: *Task, thread_id: usize) void {
-    builder(ci, io, task, thread_id);
+pub fn initBuilder(
+    io: std.Io,
+    ci: *const ClientInterface,
+    task: *Task,
+    thread_id: usize,
+    progress: std.Progress.Node,
+) void {
+    // NOTE: might want to move progress to task later to better make sure that it is thread safe
+    var buf: [8196]u8 = undefined;
+    const progress_name = pn: {
+        break :pn std.fmt.bufPrint(
+            &buf,
+            "Generating payload for {s}",
+            .{ci.client[thread_id].request.path},
+        ) catch {
+            break :pn "Unknown";
+        };
+    };
+
+    const prog = progress.start(progress_name, ci.client[thread_id].repeat);
+    defer prog.end();
+
+    builder(ci, io, task, thread_id, prog);
 }
 
 // this will be called by client to generate data
-fn builder(ci: *const ClientInterface, io: std.Io, task: *Task, thread_id: usize) void {
+fn builder(
+    ci: *const ClientInterface,
+    io: std.Io,
+    task: *Task,
+    thread_id: usize,
+    prog: std.Progress.Node,
+) void {
     var c = ci.client[thread_id];
     while (true) {
         const idx = task.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
@@ -77,6 +104,7 @@ fn builder(ci: *const ClientInterface, io: std.Io, task: *Task, thread_id: usize
         }
 
         parseBody(&c, task, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
+        prog.completeOne();
     }
 }
 

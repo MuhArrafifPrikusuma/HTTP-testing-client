@@ -31,25 +31,32 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
         task.read_counter.appendAssumeCapacity(.init(0));
     }
 
-    for (ci.client, 0..) |_, i| {
+    var max_response: u32 = 0;
+    for (ci.client, 0..) |c, i| {
+        max_response += c.repeat;
         task.options.appendNTimes(allocator, .init(null), @as(usize, ci.client[i].repeat)) catch |err| {
             std.log.err("not enough memory: {any}\n", .{err});
             std.process.exit(1);
         };
     }
 
+    const progress = std.Progress.start(io, .{
+        .root_name = "waiting",
+    });
+    defer progress.end();
+
     var group: std.Io.Group = .init;
     for (ci.client, 0..) |_, i| {
-        try group.concurrent(io, Req.initBuilder, .{ io, ci, task, i });
-        try group.concurrent(io, client.clientNet, .{ io, ci, task, i });
+        try group.concurrent(io, Req.initBuilder, .{ io, ci, task, i, progress });
+        try group.concurrent(io, client.clientNet, .{ io, ci, task, i, max_response, progress });
     }
 
     group.await(io) catch |err| std.log.err("{any}\n", .{err});
     ci.deinit();
-    var i: usize = 0;
-    if (task.response.get(.success)) |list| {
-        while (i < list.id) : (i += 1) {
-            std.log.debug("what we get: id:{d}\ncontent:{any}\n", .{ i, list.response.items[i] });
-        }
-    }
+    // var i: usize = 0;
+    // if (task.response.get(.success)) |list| {
+    //     while (i < list.id) : (i += 1) {
+    //         std.log.debug("what we get: id:{d}\ncontent:{any}\n", .{ i, list.response.items[i] });
+    //     }
+    // }
 }

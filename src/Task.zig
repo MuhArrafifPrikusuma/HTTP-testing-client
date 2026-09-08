@@ -18,8 +18,7 @@ write_counter: std.ArrayList(std.atomic.Value(usize)),
 options: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)),
 
 /// status accumulator to store how many response with that status class
-response_status_accu: std.AutoHashMap(std.http.Status.Class, usize),
-response: std.AutoHashMap(usize, res.Response),
+response: std.AutoHashMap(std.http.Status.Class, res.ResponseMap),
 
 pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     var start_arena = std.heap.ArenaAllocator.init(backing_allocator);
@@ -36,7 +35,6 @@ pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     self.*.options = .empty;
     self.*.read_counter = .empty;
     self.*.write_counter = .empty;
-    self.*.response_status_accu = .init(allocator);
     self.*.response = .init(allocator);
 
     return self;

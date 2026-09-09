@@ -32,7 +32,7 @@ pub fn clientNet(
 
     while (true) {
         const opt = task.read(io, thread_id, ci.client[thread_id].repeat) catch {
-            std.log.debug("thread: {d} finished", .{thread_id});
+            // std.log.debug("thread: {d} finished", .{thread_id});
             break;
         };
 

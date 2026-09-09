@@ -96,14 +96,39 @@ fn builder(
     thread_id: usize,
     prog: std.Progress.Node,
 ) void {
+    const max_write_per_batch: u32 = 10_000;
+    var current_batch_write: u32 = 0;
+
     var c = ci.client[thread_id];
     while (true) {
         const idx = task.write_counter.items[thread_id].fetchAdd(1, .acq_rel);
+
         if (idx >= c.repeat) {
             break;
         }
 
+        if (task.halt.items[thread_id]) {
+            while (true) {
+                const current_read = task.read_counter.items[thread_id].load(.acquire);
+
+                if (current_read >= idx - 100) {
+                    task.halt.items[thread_id] = false;
+                    current_batch_write = 0;
+                    break;
+                }
+
+                std.Io.sleep(io, std.Io.Duration.fromMilliseconds(1), .real) catch |err| {
+                    std.log.err("Arggh i cannot sleep: {any}\n", .{err});
+                    std.process.exit(1);
+                };
+            }
+        }
+
+        if (current_batch_write >= max_write_per_batch)
+            task.halt.items[thread_id] = true;
+
         parseBody(&c, task, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
+        current_batch_write += 1;
         prog.completeOne();
     }
 }
@@ -243,7 +268,7 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: Allocator) ?[]cons
         } orelse content_string[idx.start .. idx.end + 1];
 
         if (new_content) |ctn| {
-            new_content = std.mem.concat(
+            const combined = std.mem.concat(
                 allocator,
                 u8,
                 &.{ ctn, content_string[prev_offset + 1 .. idx.start], new_string },
@@ -251,6 +276,9 @@ fn handleSpecial(content: ?[]const u8, io: std.Io, allocator: Allocator) ?[]cons
                 std.log.err("{any}\n", .{err});
                 std.process.exit(1);
             };
+            allocator.free(ctn);
+
+            new_content = combined;
         } else {
             new_content = std.mem.concat(
                 allocator,

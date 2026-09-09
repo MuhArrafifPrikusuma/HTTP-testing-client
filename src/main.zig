@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const argument = @import("arguments.zig");
 const json = @import("json.zig");
 const client = @import("client.zig");
@@ -6,6 +7,10 @@ const client = @import("client.zig");
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
 
+var debug_allocator: std.heap.DebugAllocator(.{ .safety = true, .thread_safe = true }) = .init;
+
+// NOTE: i think switch the way the writer work by only working on batch of maximum 100k request per second
+// to keep the memory usage under 100mb even when sending like 100m requests
 pub fn main(init: std.process.Init) !void {
     argument.handleArgs(init.minimal.args, init.io);
     const ci = try json.parseJson();
@@ -14,7 +19,11 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
-    const task = Task.init(std.heap.smp_allocator) catch @panic("failed to initiate tasks");
+    const backing_allocator = switch (builtin.mode) {
+        .debug, .safe => debug_allocator.allocator(),
+        .fast, .small => std.heap.smp_allocator,
+    };
+    const task = Task.init(backing_allocator) catch @panic("failed to initiate tasks");
     defer task.deinit();
 
     const allocator = task.arena.allocator();
@@ -24,12 +33,11 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
 
     try task.write_counter.ensureUnusedCapacity(allocator, total_task);
     try task.read_counter.ensureUnusedCapacity(allocator, total_task);
+    try task.halt.ensureUnusedCapacity(allocator, total_task);
 
-    var index: usize = 0;
-    while (index < total_task) : (index += 1) {
-        task.write_counter.appendAssumeCapacity(.init(0));
-        task.read_counter.appendAssumeCapacity(.init(0));
-    }
+    try task.halt.appendNTimesBounded(false, total_task);
+    try task.write_counter.appendNTimesBounded(.init(0), total_task);
+    try task.read_counter.appendNTimesBounded(.init(0), total_task);
 
     var max_response: u32 = 0;
     for (ci.client, 0..) |c, i| {

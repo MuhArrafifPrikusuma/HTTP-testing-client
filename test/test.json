@@ -1,7 +1,7 @@
 [
 	{
 		"fuzz": true,
-		"repeat": 10000,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -11,8 +11,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -22,8 +22,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -33,8 +33,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -44,8 +44,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -55,8 +55,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -66,8 +66,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -77,8 +77,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -88,8 +88,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",
@@ -99,8 +99,8 @@
 		}
 	},
 	{
-		"fuzz": false,
-		"repeat": 10000,
+		"fuzz": true,
+		"repeat": 50000,
 		"uri": "http://localhost:8080",
 		"request": {
 			"method": "GET",

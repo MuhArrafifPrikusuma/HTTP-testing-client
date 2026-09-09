@@ -41,6 +41,9 @@ pub fn clientNet(
             std.log.err("Client request fetch: {any}\n", .{err});
             continue;
         };
+        if (opt.payload) |payload| {
+            allocator.free(payload);
+        }
         allocator.destroy(opt);
 
         res.storeResponse(task, io, response.status.class(), max_response);

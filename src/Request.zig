@@ -1,8 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Task = @import("Task.zig");
 
 const Allocator = std.mem.Allocator;
+const ProgressNode = if (builtin.is_test) void else std.Progress.Node;
 
 pub const Client = struct {
     // fuzz = true for auto generate data
@@ -68,24 +70,28 @@ pub fn initBuilder(
     ci: *const ClientInterface,
     task: *Task,
     thread_id: usize,
-    progress: std.Progress.Node,
+    progress: ProgressNode,
 ) void {
     // NOTE: might want to move progress to task later to better make sure that it is thread safe
-    var buf: [8196]u8 = undefined;
-    const progress_name = pn: {
-        break :pn std.fmt.bufPrint(
-            &buf,
-            "Generating payload for {s}",
-            .{ci.client[thread_id].request.path},
-        ) catch {
-            break :pn "Unknown";
+    if (!builtin.is_test) {
+        var buf: [8196]u8 = undefined;
+        const progress_name = pn: {
+            break :pn std.fmt.bufPrint(
+                &buf,
+                "Generating payload for {s}",
+                .{ci.client[thread_id].request.path},
+            ) catch {
+                break :pn "Unknown";
+            };
         };
-    };
 
-    const prog = progress.start(progress_name, ci.client[thread_id].repeat);
-    defer prog.end();
+        const prog = progress.start(progress_name, ci.client[thread_id].repeat);
+        defer prog.end();
 
-    builder(ci, io, task, thread_id, prog);
+        builder(ci, io, task, thread_id, prog);
+    } else {
+        builder(ci, io, task, thread_id, {});
+    }
 }
 
 // this will be called by client to generate data
@@ -94,7 +100,7 @@ fn builder(
     io: std.Io,
     task: *Task,
     thread_id: usize,
-    prog: std.Progress.Node,
+    prog: ProgressNode,
 ) void {
     const max_write_per_batch: u32 = 10_000;
     var current_batch_write: u32 = 0;
@@ -129,7 +135,10 @@ fn builder(
 
         parseBody(&c, task, idx, io) catch |err| std.log.err("is there error {any}\n", .{err});
         current_batch_write += 1;
-        prog.completeOne();
+
+        if (!builtin.is_test) {
+            prog.completeOne();
+        }
     }
 }
 
@@ -410,4 +419,40 @@ fn fuzzer(tag: SpecialTags, io: std.Io) !Value {
         .RAND_STR => randString(random),
     };
     return randomize;
+}
+
+// <<- Test Cases ->>
+
+test "test builder" {
+    const io = std.testing.io;
+    const allocator = std.testing.allocator;
+
+    const ci = try ClientInterface.init(allocator);
+    const task = try Task.init(allocator);
+
+    const thread_id = 0;
+
+    var client = [_]Client{
+        .{
+            .repeat = 1,
+            .uri = "http://localhost:8080",
+            .fuzz = false,
+            .request = .{ .method = .GET },
+        },
+    };
+    ci.client = &client;
+
+    try task.write_counter.appendNTimes(allocator, .init(0), ci.client[thread_id].repeat);
+    try task.halt.appendNTimes(allocator, false, ci.client[thread_id].repeat);
+    try task.options.appendNTimes(allocator, .init(null), ci.client[thread_id].repeat);
+
+    initBuilder(
+        io,
+        ci,
+        task,
+        thread_id,
+        {},
+    );
+
+    try std.testing.expect(task.options.items[0].load(.acquire) != null);
 }

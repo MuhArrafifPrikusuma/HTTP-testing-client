@@ -4,7 +4,7 @@ const Task = @import("Task.zig");
 const http = std.http;
 const Allocator = std.mem.Allocator;
 
-const Response = struct {
+pub const Response = struct {
     body: []const u8 = "dummy body",
 };
 
@@ -20,10 +20,9 @@ const HashContext = struct {
         return wyhash.final();
     }
 
-    pub fn eql(self: HashContext, a: Response, b: Response, index: usize) bool {
+    pub fn eql(self: HashContext, a: Response, b: Response) bool {
         _ = self;
-        _ = index;
-        return std.mem.eql(a.body, b.body);
+        return std.mem.eql(u8, a.body, b.body);
     }
 };
 
@@ -75,10 +74,10 @@ pub const ResponsePool = struct {
         unreachable;
     }
 
-    /// decrement key and when the counter reaches 0 delete the key
+    /// decrement counter and when the counter reaches 0 delete the key
     pub fn release(self: *ResponsePool, key: *Response) !void {
         if (self.pool.getPtr(key.*)) |count| {
-            count.* - 1;
+            count.* -= 1;
             if (count.* == 0) {
                 _ = self.pool.remove(key.*);
                 self.allocator.destroy(key);
@@ -88,24 +87,25 @@ pub const ResponsePool = struct {
         return ResponsePoolErr.InvalidKey;
     }
 
-    pub fn getAll(self: *ResponsePool) !Response {
+    pub fn get(self: *ResponsePool) ?*Response {
         var iter = self.pool.iterator();
 
         if (iter.next()) |item| {
             return item.key_ptr;
         }
+        return null;
     }
 
-    /// store string and allocate new memory for the string if it's a new string
-    pub fn interns(self: *ResponsePool, str: []const u8) ![]const u8 {
-        if (self.pool.getKey(str)) |existing| {
-            return existing;
-        }
-
-        const permanent_cpy = try self.allocator.dupe(u8, str);
-        try self.pool.put(permanent_cpy, {});
-        return permanent_cpy;
-    }
+    // store string and allocate new memory for the string if it's a new string
+    // pub fn interns(self: *ResponsePool, str: []const u8) ![]const u8 {
+    //     if (self.pool.getKey(str)) |existing| {
+    //         return existing;
+    //     }
+    //
+    //     const permanent_cpy = try self.allocator.dupe(u8, str);
+    //     try self.pool.put(permanent_cpy, {});
+    //     return permanent_cpy;
+    // }
 };
 
 pub fn storeResponse(
@@ -130,26 +130,19 @@ pub fn storeResponse(
 
 fn storeInMap(task: *Task, status: std.http.Status.Class, max: u32, allocator: Allocator) !void {
     _ = max;
-    if (task.response.count() == 0)
+    if (task.response.count() == 0) {
         try task.response.ensureTotalCapacity(5);
-
-    if (task.response.getPtr(status)) |list| {
-        const len = list.response.items.len;
-        if (list.id >= len) {
-            const reserved_capacity = if (len == 0) 10 else len;
-            try list.response.ensureUnusedCapacity(allocator, reserved_capacity);
-        }
-
-        list.response.appendAssumeCapacity(.{});
-
-        list.id += 1;
-
+        _ = task.response.fetchPutAssumeCapacity(.success, .init(allocator));
+        _ = task.response.fetchPutAssumeCapacity(.client_error, .init(allocator));
+        _ = task.response.fetchPutAssumeCapacity(.informational, .init(allocator));
+        _ = task.response.fetchPutAssumeCapacity(.redirect, .init(allocator));
+        _ = task.response.fetchPutAssumeCapacity(.server_error, .init(allocator));
         return;
-    } else {
-        _ = task.response.fetchPutAssumeCapacity(status, .{
-            .id = 0,
-            .response = .empty,
-        });
+    }
+
+    if (task.response.getPtr(status)) |res| {
+        // NOTE: default by now fill with response from server later
+        try res.intern(.{});
         return;
     }
     unreachable;

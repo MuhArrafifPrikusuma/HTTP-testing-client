@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const argument = @import("arguments.zig");
 const json = @import("json.zig");
 const client = @import("client.zig");
+const res = @import("response.zig");
 
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
@@ -51,7 +52,6 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     const progress = std.Progress.start(io, .{
         .root_name = "waiting",
     });
-    defer progress.end();
 
     var group: std.Io.Group = .init;
     for (ci.client, 0..) |_, i| {
@@ -61,10 +61,18 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
 
     group.await(io) catch |err| std.log.err("{any}\n", .{err});
     ci.deinit();
-    // var i: usize = 0;
-    // if (task.response.get(.success)) |list| {
-    //     while (i < list.id) : (i += 1) {
-    //         std.log.debug("what we get: id:{d}\ncontent:{any}\n", .{ i, list.response.items[i] });
-    //     }
-    // }
+
+    progress.end();
+
+    if (task.response.getPtr(.success)) |respool| {
+        var prev_ptr: *res.Response = undefined;
+
+        while (respool.get()) |response| {
+            try respool.release(response);
+            if (response == prev_ptr) continue;
+
+            std.debug.print("this body: {s}\nappear: {d} many times\n", .{ response.body, respool.pool.get(response.*).? });
+            prev_ptr = response;
+        }
+    }
 }

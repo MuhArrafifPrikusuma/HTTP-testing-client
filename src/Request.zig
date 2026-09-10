@@ -423,12 +423,16 @@ fn fuzzer(tag: SpecialTags, io: std.Io) !Value {
 
 // <<- Test Cases ->>
 
-test "test builder" {
+test "test request builder" {
     const io = std.testing.io;
     const allocator = std.testing.allocator;
 
     const ci = try ClientInterface.init(allocator);
     const task = try Task.init(allocator);
+    defer {
+        ci.deinit();
+        task.deinit();
+    }
 
     const thread_id = 0;
 
@@ -445,6 +449,11 @@ test "test builder" {
     try task.write_counter.appendNTimes(allocator, .init(0), ci.client[thread_id].repeat);
     try task.halt.appendNTimes(allocator, false, ci.client[thread_id].repeat);
     try task.options.appendNTimes(allocator, .init(null), ci.client[thread_id].repeat);
+    defer {
+        task.write_counter.deinit(allocator);
+        task.halt.deinit(allocator);
+        task.options.deinit(allocator);
+    }
 
     initBuilder(
         io,
@@ -454,5 +463,9 @@ test "test builder" {
         {},
     );
 
-    try std.testing.expect(task.options.items[0].load(.acquire) != null);
+    if (task.options.items[0].load(.acquire)) |_| {
+        try std.testing.expect(true);
+    } else {
+        try std.testing.expect(false);
+    }
 }

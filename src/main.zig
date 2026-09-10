@@ -13,7 +13,9 @@ var debug_allocator: std.heap.DebugAllocator(.{ .safety = true, .thread_safe = t
 // NOTE: i think switch the way the writer work by only working on batch of maximum 100k request per second
 // to keep the memory usage under 100mb even when sending like 100m requests
 pub fn main(init: std.process.Init) !void {
-    argument.handleArgs(init.minimal.args, init.io);
+    const todo = argument.handleArgs(init.minimal.args, init.io);
+    if (todo == .exit) std.process.exit(0);
+
     const ci = try json.parseJson();
 
     splitTasks(ci, init.io) catch |err| std.log.err("{any}\n", .{err});
@@ -48,6 +50,9 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
             std.process.exit(1);
         };
     }
+    std.log.debug("sizeof fetchoptions ptr: {d:.2}\n", .{@sizeOf(?*std.http.Client.FetchOptions)});
+    const memory_usage: f128 = @as(f128, task.options.items.len * @sizeOf(?*std.http.Client.FetchOptions) / 1024);
+    std.log.debug("total memory allocated for options: {d:.2} KB\n", .{memory_usage});
 
     const progress = std.Progress.start(io, .{
         .root_name = "waiting",
@@ -63,6 +68,11 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     ci.deinit();
 
     progress.end();
+
+    task.write_counter.deinit(allocator);
+    task.read_counter.deinit(allocator);
+    task.halt.deinit(allocator);
+    task.options.deinit(allocator);
 
     if (task.response.getPtr(.success)) |respool| {
         var prev_ptr: *res.Response = undefined;

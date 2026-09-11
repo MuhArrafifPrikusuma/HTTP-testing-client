@@ -1,5 +1,7 @@
 const std = @import("std");
+
 const res = @import("response.zig");
+const ansii = @import("ansii.zig");
 
 const Self = @This();
 
@@ -26,9 +28,9 @@ pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     var start_arena = std.heap.ArenaAllocator.init(backing_allocator);
     errdefer start_arena.deinit();
 
-    const bootstrap = start_arena.allocator();
+    const bootstrap_allocator = start_arena.allocator();
 
-    const self = try bootstrap.create(Self);
+    const self = try bootstrap_allocator.create(Self);
 
     self.*.arena = start_arena;
     const allocator = self.arena.allocator();
@@ -68,4 +70,69 @@ pub fn read(
             };
         }
     }
+}
+
+fn showAllResponse(self: *Self, out_writer: *std.Io.Writer) !void {
+    const repeat: u8 = @typeInfo(std.http.Status.Class).@"enum".field_names.len;
+    std.debug.print("how much is repeat: {d}\n", .{repeat});
+
+    var i: u8 = 0;
+    while (i < repeat) : (i += 1) {
+        std.debug.print("counter: {d}\n", .{i});
+        const class: std.http.Status.Class = @enumFromInt(i);
+        try self.showResponseByClassesSpecific(class, out_writer);
+    }
+}
+
+fn showResponseByClassesSpecific(
+    self: *Self,
+    class: std.http.Status.Class,
+    out_writer: *std.Io.Writer,
+) !void {
+    const to_show: []const u8 = @tagName(class);
+
+    try out_writer.print("All response in class: {s}{s}{s}\n", .{
+        ansii.styles.dim,
+        to_show,
+        ansii.reset,
+    });
+
+    try out_writer.flush();
+
+    if (self.response.getPtr(class)) |respool| {
+        while (respool.get()) |response| {
+            const total_found = respool.pool.get(response.*) orelse 0;
+
+            std.debug.print("current pointer address: {*}\n", .{response});
+            try out_writer.print("{s}status{s}: {any}\n", .{
+                ansii.styles.bold,
+                ansii.reset,
+                response.status,
+            });
+            try out_writer.print("{s}body{s}: {s}\n", .{
+                ansii.styles.bold,
+                ansii.reset,
+                response.body,
+            });
+            try out_writer.print("{s}Total Found{s}: {d}\n", .{
+                ansii.styles.bold,
+                ansii.reset,
+                total_found,
+            });
+            try respool.release(response);
+        }
+    }
+}
+
+pub fn showResponseByClass(self: *Self, show: res.ShowClass, io: std.Io) !void {
+    var buf: [4096]u8 = undefined;
+    var writer = std.Io.File.stdout().writer(io, &buf);
+    const stdout = &writer.interface;
+    switch (show) {
+        .all => try self.showAllResponse(stdout),
+        .class => |c| try self.showResponseByClassesSpecific(c, stdout),
+    }
+
+    std.debug.print("dont flush too much idiot water is scarce\n", .{});
+    try stdout.flush();
 }

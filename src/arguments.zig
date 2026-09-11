@@ -1,19 +1,15 @@
 const std = @import("std");
 const json = @import("json.zig");
+const res = @import("response.zig");
+
+const ansii = @import("ansii.zig");
 
 var next_should_bfile: bool = false;
 var next_must_async: bool = false;
 
-const Show = enum {
-    ALL,
-    SUCCESS,
-    FAILED_ALL,
-    FAIL_SERVER,
-    FAIL_CLIENT,
-};
-
 pub const DoAfter = union(enum) {
-    show: Show,
+    show: res.Show,
+    showClass: res.ShowClass,
     nothing: void,
     exit: void,
 };
@@ -43,29 +39,44 @@ pub fn handleArgs(args: std.process.Args, io: std.Io) DoAfter {
 
         if (next_should_bfile) {
             consume(arg, io, json.raw_file.allocator, &json.raw_file.content) catch |err| {
-                stdout.print("\x1B[38;2;255;20;10m{any}\x1B[0m\r\n", .{err}) catch |perr| std.log.err("{any}\n", .{perr});
+                stdout.print("{s}{any}{s}\r\n", .{
+                    ansii.colors.errMessage,
+                    err,
+                    ansii.reset,
+                }) catch |perr| std.log.err("{any}\n", .{perr});
             };
             break;
         }
 
-        todo = processArg(arg, stdout);
+        // NOTE: make this better later
+        const temp = processArg(arg, stdout);
+        todo = if (temp != .nothing) temp else todo;
     }
     if (args.vector.len == 1)
-        stdout.print("No arguments found!\r\nuse \x1B[2m-h\x1B[22m for help\r\n", .{}) catch |err| std.log.err("{any}\n", .{err});
+        stdout.print("No arguments found!\r\nuse {s}-h{s} for help\r\n", .{
+            ansii.styles.dim,
+            ansii.reset,
+        }) catch |err| std.log.err("{any}\n", .{err});
 
     stdout.flush() catch |err| std.log.err("{any} -> handleArgs\n", .{err});
-    std.log.debug("test: {s}\n", .{json.raw_file.content.items});
     return todo;
 }
 
 fn handleUnknownArgs(arg: []const u8) noreturn {
-    std.log.err("Unknown argument: \x1B[2m{s}\x1B[22m\nuse \x1B[2m-h\x1B[22m for help ", .{arg});
+    std.log.err("Unknown argument: {s}{s}{s}\nuse {s}-h{s} for help ", .{
+        ansii.styles.dim,
+        arg,
+        ansii.reset,
+        ansii.styles.dim,
+        ansii.reset,
+    });
     std.process.exit(1);
 }
 
 const ArgsHandlers = *const fn (*std.Io.Writer) anyerror!DoAfter;
 
 const Argument = enum {
+    SHOWCLASS,
     SHOW,
     HELP,
     RUN,
@@ -100,6 +111,7 @@ fn getExternsion(arg: []const u8) ArgError!?[]const u8 {
 fn processArg(arg: []const u8, stdout: *std.Io.Writer) DoAfter {
     const stripped_arg = convrtToEnum(arg) catch handleUnknownArgs(arg);
     const extension = getExternsion(arg) catch handleUnknownArgs(arg);
+    std.debug.print("extension: {?s}\n", .{extension});
 
     return blk: {
         switch (stripped_arg) {
@@ -110,7 +122,8 @@ fn processArg(arg: []const u8, stdout: *std.Io.Writer) DoAfter {
                 };
             },
             .RUN => break :blk setConsume(),
-            .SHOW => break :blk setShow(arg, extension),
+            .SHOWCLASS => break :blk setShowClass(arg, extension),
+            .SHOW => unreachable, // NOTE: gave this purpose later
         }
     };
 
@@ -167,15 +180,16 @@ fn consume(arg: []const u8, io: std.Io, allocator: std.mem.Allocator, list: *std
     try reader.interface.appendRemaining(allocator, list, .limited(50 * 1024 * 1024));
 }
 
-fn setShow(arg: []const u8, ext: ?[]const u8) DoAfter {
+fn setShowClass(arg: []const u8, ext: ?[]const u8) DoAfter {
+    std.debug.print("does it even get here?\n", .{});
     if (ext) |e| {
         var buf: [256]u8 = undefined;
-        const to_upper = std.ascii.upperString(&buf, e);
+        const to_upper = std.ascii.lowerString(&buf, e);
 
-        const enum_val = std.meta.stringToEnum(Show, to_upper) orelse handleUnknownArgs(arg);
-        const doaf: DoAfter = .{ .show = enum_val };
+        const @"enum" = std.meta.stringToEnum(std.http.Status.Class, to_upper) orelse handleUnknownArgs(arg);
+        const doaf: DoAfter = .{ .showClass = .{ .class = @"enum" } };
 
         return doaf;
-    } else return .{ .show = .ALL };
+    } else return .{ .showClass = .all };
     unreachable;
 }

@@ -46,7 +46,7 @@ pub fn clientNet(
         }
         allocator.destroy(opt);
 
-        res.storeResponse(task, io, response.status.class(), max_response);
+        res.storeResponse(task, io, response.status, max_response);
 
         if (response.status.class() == .success) {
             // std.debug.print("status: {s}\n", .{shared.response_writer.written()});

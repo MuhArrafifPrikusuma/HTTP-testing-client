@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+
 const argument = @import("arguments.zig");
 const json = @import("json.zig");
 const client = @import("client.zig");
@@ -10,18 +11,19 @@ const Task = @import("Task.zig");
 
 var debug_allocator: std.heap.DebugAllocator(.{ .safety = true, .thread_safe = true }) = .init;
 
-// NOTE: i think switch the way the writer work by only working on batch of maximum 100k request per second
+// NOTE: i think switch the way the writer work by only working on batch of maximum 10k request per second
 // to keep the memory usage under 100mb even when sending like 100m requests
 pub fn main(init: std.process.Init) !void {
     const todo = argument.handleArgs(init.minimal.args, init.io);
     if (todo == .exit) std.process.exit(0);
+    std.debug.print("what todo: {any}\n", .{todo});
 
     const ci = try json.parseJson();
 
-    splitTasks(ci, init.io) catch |err| std.log.err("{any}\n", .{err});
+    splitTasks(ci, init.io, todo) catch |err| std.log.err("{any}\n", .{err});
 }
 
-fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
+fn splitTasks(ci: *Req.ClientInterface, io: std.Io, todo: argument.DoAfter) !void {
     const backing_allocator = switch (builtin.mode) {
         .debug, .safe => debug_allocator.allocator(),
         .fast, .small => std.heap.smp_allocator,
@@ -50,6 +52,7 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
             std.process.exit(1);
         };
     }
+    // NOTE: for debug purposes remove later
     std.log.debug("sizeof fetchoptions ptr: {d:.2}\n", .{@sizeOf(?*std.http.Client.FetchOptions)});
     const memory_usage: f128 = @as(f128, task.options.items.len * @sizeOf(?*std.http.Client.FetchOptions) / 1024);
     std.log.debug("total memory allocated for options: {d:.2} KB\n", .{memory_usage});
@@ -74,15 +77,8 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io) !void {
     task.halt.deinit(allocator);
     task.options.deinit(allocator);
 
-    if (task.response.getPtr(.success)) |respool| {
-        var prev_ptr: *res.Response = undefined;
-
-        while (respool.get()) |response| {
-            try respool.release(response);
-            if (response == prev_ptr) continue;
-
-            std.debug.print("this body: {s}\nappear: {d} many times\n", .{ response.body, respool.pool.get(response.*).? });
-            prev_ptr = response;
-        }
+    switch (todo) {
+        .showClass => |show| try task.showResponseByClass(show, io),
+        else => std.debug.print("replace later\n", .{}),
     }
 }

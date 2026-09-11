@@ -5,7 +5,16 @@ const http = std.http;
 const Allocator = std.mem.Allocator;
 
 pub const Response = struct {
+    status: std.http.Status,
+    // WARNING: don't forget to make it so that the body will be "" if there is no body from response
     body: []const u8 = "dummy body",
+};
+
+pub const Show = std.http.Status;
+
+pub const ShowClass = union(enum) {
+    all: void,
+    class: std.http.Status.Class,
 };
 
 const ResponsePoolErr = error{InvalidKey};
@@ -15,14 +24,18 @@ const HashContext = struct {
         _ = self;
         var wyhash = std.hash.Wyhash.init(0);
 
+        const status = @tagName(key.status);
+
         wyhash.update(key.body);
+        wyhash.update(status);
 
         return wyhash.final();
     }
 
     pub fn eql(self: HashContext, a: Response, b: Response) bool {
         _ = self;
-        return std.mem.eql(u8, a.body, b.body);
+
+        return std.mem.eql(u8, a.body, b.body) and a.status == b.status;
     }
 };
 
@@ -111,7 +124,7 @@ pub const ResponsePool = struct {
 pub fn storeResponse(
     task: *Task,
     io: std.Io,
-    status: http.Status.Class,
+    status: http.Status,
     max: u32,
 ) void {
     const allocator = task.arena.allocator();
@@ -128,21 +141,21 @@ pub fn storeResponse(
     };
 }
 
-fn storeInMap(task: *Task, status: std.http.Status.Class, max: u32, allocator: Allocator) !void {
+fn storeInMap(task: *Task, status: std.http.Status, max: u32, allocator: Allocator) !void {
     _ = max;
     if (task.response.count() == 0) {
         try task.response.ensureTotalCapacity(5);
         _ = task.response.fetchPutAssumeCapacity(.success, .init(allocator));
+        _ = task.response.fetchPutAssumeCapacity(.redirect, .init(allocator));
         _ = task.response.fetchPutAssumeCapacity(.client_error, .init(allocator));
         _ = task.response.fetchPutAssumeCapacity(.informational, .init(allocator));
-        _ = task.response.fetchPutAssumeCapacity(.redirect, .init(allocator));
         _ = task.response.fetchPutAssumeCapacity(.server_error, .init(allocator));
         return;
     }
 
-    if (task.response.getPtr(status)) |res| {
+    if (task.response.getPtr(status.class())) |res| {
         // NOTE: default by now fill with response from server later
-        try res.intern(.{});
+        try res.intern(.{ .status = status });
         return;
     }
     unreachable;

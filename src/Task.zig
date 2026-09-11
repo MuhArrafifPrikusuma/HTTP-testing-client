@@ -78,7 +78,6 @@ fn showAllResponse(self: *Self, out_writer: *std.Io.Writer) !void {
 
     var i: u8 = 0;
     while (i < repeat) : (i += 1) {
-        std.debug.print("counter: {d}\n", .{i});
         const class: std.http.Status.Class = @enumFromInt(i);
         try self.showResponseByClassesSpecific(class, out_writer);
     }
@@ -97,13 +96,14 @@ fn showResponseByClassesSpecific(
         ansii.reset,
     });
 
-    try out_writer.flush();
+    var @"found_any?": bool = false;
 
     if (self.response.getPtr(class)) |respool| {
         while (respool.get()) |response| {
+            @"found_any?" = true;
+
             const total_found = respool.pool.get(response.*) orelse 0;
 
-            std.debug.print("current pointer address: {*}\n", .{response});
             try out_writer.print("{s}status{s}: {any}\n", .{
                 ansii.styles.bold,
                 ansii.reset,
@@ -119,9 +119,14 @@ fn showResponseByClassesSpecific(
                 ansii.reset,
                 total_found,
             });
-            try respool.release(response);
-        }
-    }
+
+            try respool.invalidate(response);
+        } else if (!@"found_any?") try out_writer.print("nothing in {s}{s}{s}\n", .{
+            ansii.styles.dim,
+            to_show,
+            ansii.reset,
+        });
+    } else unreachable;
 }
 
 pub fn showResponseByClass(self: *Self, show: res.ShowClass, io: std.Io) !void {

@@ -100,6 +100,16 @@ pub const ResponsePool = struct {
         return ResponsePoolErr.InvalidKey;
     }
 
+    pub fn invalidate(self: *ResponsePool, key: *Response) !void {
+        if (self.pool.getPtr(key.*)) |count| {
+            count.* = 0;
+            _ = self.pool.remove(key.*);
+            self.allocator.destroy(key);
+            return;
+        }
+        return ResponsePoolErr.InvalidKey;
+    }
+
     pub fn get(self: *ResponsePool) ?*Response {
         var iter = self.pool.iterator();
 

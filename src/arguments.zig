@@ -22,8 +22,11 @@ pub fn handleArgs(args: std.process.Args, io: std.Io) DoAfter {
     var iter = args.iterate();
 
     var buf_writer: [1024]u8 = undefined;
-    var writer = std.Io.File.stdout().writer(io, &buf_writer);
-    const stdout = &writer.interface;
+    var out_writer = std.Io.File.stdout().writer(io, &buf_writer);
+    var err_writer = std.Io.File.stderr().writer(io, &buf_writer);
+
+    const stdout = &out_writer.interface;
+    const stderr = &err_writer.interface;
 
     var todo: DoAfter = .exit;
 
@@ -39,17 +42,13 @@ pub fn handleArgs(args: std.process.Args, io: std.Io) DoAfter {
 
         if (next_should_bfile) {
             consume(arg, io, json.raw_file.allocator, &json.raw_file.content) catch |err| {
-                stdout.print("{s}{any}{s}\r\n", .{
-                    ansii.colors.errMessage,
-                    err,
-                    ansii.reset,
-                }) catch |perr| std.log.err("{any}\n", .{perr});
+                std.log.err("{any}\n", .{err});
             };
             break;
         }
 
         // NOTE: make this better later
-        const temp = processArg(arg, stdout);
+        const temp = processArg(arg, stdout, stderr);
         todo = if (temp != .nothing) temp else todo;
     }
     if (args.vector.len == 1)
@@ -62,14 +61,17 @@ pub fn handleArgs(args: std.process.Args, io: std.Io) DoAfter {
     return todo;
 }
 
-fn handleUnknownArgs(arg: []const u8) noreturn {
-    std.log.err("Unknown argument: {s}{s}{s}\nuse {s}-h{s} for help ", .{
+fn handleUnknownArgs(arg: []const u8, stderr: *std.Io.Writer) noreturn {
+    stderr.print("Unknown argument: {s}{s}{s}\nuse {s}-h{s} for help\n", .{
         ansii.styles.dim,
         arg,
         ansii.reset,
         ansii.styles.dim,
         ansii.reset,
-    });
+    }) catch |err| std.log.err("{any}\n", .{err});
+
+    stderr.flush() catch |err| std.log.err("{any}\n", .{err});
+
     std.process.exit(1);
 }
 
@@ -83,7 +85,7 @@ const Argument = enum {
 };
 
 fn convrtToEnum(arg: []const u8) ArgError!Argument {
-    if (arg.len > 255) handleUnknownArgs(arg);
+    if (arg.len > 255) return ArgError.UnknownArgument;
 
     var tmp_arg = if (std.mem.findScalar(u8, arg, '=')) |end| arg[0..end] else arg;
     tmp_arg = if (std.mem.eql(u8, tmp_arg, "-h")) "HELP" else tmp_arg;
@@ -108,10 +110,9 @@ fn getExternsion(arg: []const u8) ArgError!?[]const u8 {
     unreachable;
 }
 
-fn processArg(arg: []const u8, stdout: *std.Io.Writer) DoAfter {
-    const stripped_arg = convrtToEnum(arg) catch handleUnknownArgs(arg);
-    const extension = getExternsion(arg) catch handleUnknownArgs(arg);
-    std.debug.print("extension: {?s}\n", .{extension});
+fn processArg(arg: []const u8, stdout: *std.Io.Writer, stderr: *std.Io.Writer) DoAfter {
+    const stripped_arg = convrtToEnum(arg) catch handleUnknownArgs(arg, stderr);
+    const extension = getExternsion(arg) catch handleUnknownArgs(arg, stderr);
 
     return blk: {
         switch (stripped_arg) {
@@ -122,7 +123,7 @@ fn processArg(arg: []const u8, stdout: *std.Io.Writer) DoAfter {
                 };
             },
             .RUN => break :blk setConsume(),
-            .SHOWCLASS => break :blk setShowClass(arg, extension),
+            .SHOWCLASS => break :blk setShowClass(extension) catch handleUnknownArgs(arg, stderr),
             .SHOW => unreachable, // NOTE: gave this purpose later
         }
     };
@@ -180,13 +181,13 @@ fn consume(arg: []const u8, io: std.Io, allocator: std.mem.Allocator, list: *std
     try reader.interface.appendRemaining(allocator, list, .limited(50 * 1024 * 1024));
 }
 
-fn setShowClass(arg: []const u8, ext: ?[]const u8) DoAfter {
+fn setShowClass(ext: ?[]const u8) ArgError!DoAfter {
     std.debug.print("does it even get here?\n", .{});
     if (ext) |e| {
         var buf: [256]u8 = undefined;
         const to_upper = std.ascii.lowerString(&buf, e);
 
-        const @"enum" = std.meta.stringToEnum(std.http.Status.Class, to_upper) orelse handleUnknownArgs(arg);
+        const @"enum" = std.meta.stringToEnum(std.http.Status.Class, to_upper) orelse return ArgError.UnknownArgument;
         const doaf: DoAfter = .{ .showClass = .{ .class = @"enum" } };
 
         return doaf;

@@ -10,10 +10,12 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
     if (optimize == .debug) {
+        exe.root_module.sanitize_c = .full;
         exe.root_module.sanitize_thread = true;
     }
     if (optimize == .fast or optimize == .small) {
@@ -23,6 +25,15 @@ pub fn build(b: *std.Build) void {
         exe.lto = .full;
         exe.discard_local_symbols = true;
     }
+
+    exe.root_module.addIncludePath(.{ .cwd_relative = "/usr/include" });
+    exe.root_module.linkSystemLibrary("curl", .{});
+
+    exe.root_module.linkSystemLibrary("curl", .{
+        .needed = true,
+        .search_strategy = .paths_first,
+        .preferred_link_mode = .static,
+    });
 
     b.installArtifact(exe);
 
@@ -41,4 +52,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
+
+    const check_step = b.step("check", "Make zls check this artifact");
+    check_step.dependOn(&exe.step);
 }

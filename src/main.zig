@@ -9,25 +9,40 @@ const res = @import("response.zig");
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
 
+const Allocator = std.mem.Allocator;
+
 var debug_allocator: std.heap.DebugAllocator(.{ .safety = true, .thread_safe = true }) = .init;
+
+pub const std_Options = struct {
+    pub const http_connection_pool_size = 10000;
+};
 
 // NOTE: i think switch the way the writer work by only working on batch of maximum 10k request per second
 // to keep the memory usage under 100mb even when sending like 100m requests
-pub fn main(init: std.process.Init) !void {
-    const todo = argument.handleArgs(init.minimal.args, init.io);
+pub fn main(init: std.process.Init.Minimal) !void {
+    const allocator = switch (builtin.mode) {
+        .debug, .safe => debug_allocator.allocator(),
+        .fast, .small => std.heap.smp_allocator,
+    };
+    // NOTE: limit this later to be pinned directly to target machine number of cpu cores
+    var threaded = std.Io.Threaded.init(allocator, .{ .concurrent_limit = .unlimited });
+    const io = threaded.io();
+
+    const todo = argument.handleArgs(init.args, io);
     if (todo == .exit) std.process.exit(0);
     std.debug.print("what todo: {any}\n", .{todo});
 
     const ci = try json.parseJson();
 
-    splitTasks(ci, init.io, todo) catch |err| std.log.err("{any}\n", .{err});
+    splitTasks(ci, io, todo, allocator) catch |err| std.log.err("{any}\n", .{err});
 }
 
-fn splitTasks(ci: *Req.ClientInterface, io: std.Io, todo: argument.DoAfter) !void {
-    const backing_allocator = switch (builtin.mode) {
-        .debug, .safe => debug_allocator.allocator(),
-        .fast, .small => std.heap.smp_allocator,
-    };
+fn splitTasks(
+    ci: *Req.ClientInterface,
+    io: std.Io,
+    todo: argument.DoAfter,
+    backing_allocator: Allocator,
+) !void {
     const task = Task.init(backing_allocator) catch @panic("failed to initiate tasks");
     defer task.deinit();
 

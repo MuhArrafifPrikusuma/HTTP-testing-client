@@ -2,6 +2,7 @@
 const std = @import("std");
 const res = @import("response.zig");
 const ansii = @import("ansii.zig");
+const curl = @import("curl.zig");
 
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
@@ -21,6 +22,9 @@ pub fn clientNet(
     const allocator = task.arena.allocator();
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
     defer client.deinit();
+
+    const testing = curl.curl_global_init(curl.CURL_GLOBAL_ALL);
+    std.debug.print("testing curl {d}\n", .{testing});
 
     var buf: [8196]u8 = undefined;
     const progress_name: []const u8 = pn: {
@@ -69,7 +73,13 @@ fn handleFetchError(
         error.ConnectionPending,
         => connectionErrors(stderr, options, err) catch |e|
             std.log.err("connectionErrors: {any}\n", .{e}),
-        else => {},
+        else => stderr.print("{s}{s}{s}:{any} PLACEHOLDER\n", .{
+            ansii.styles.dim,
+            options.location.url,
+            ansii.reset,
+            err,
+        }) catch |e|
+            std.log.err("else placeholder Err: {any}\n", .{e}),
     }
 }
 

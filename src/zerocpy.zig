@@ -21,7 +21,7 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
     return struct {
         const Self = @This();
 
-        pool: std.HashMap(
+        map: std.HashMap(
             K,
             usize,
             Context,
@@ -31,7 +31,7 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
 
         pub fn init(allocator: Allocator) StructHashMap(K, Context) {
             return .{
-                .pool = std.HashMap(
+                .map = std.HashMap(
                     K,
                     usize,
                     Context,
@@ -43,11 +43,11 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
         }
 
         pub fn deinit(self: *Self) void {
-            var iter = self.pool.keyIterator();
+            var iter = self.map.keyIterator();
             while (iter.next()) |key| {
                 self.allocator.free(key.*);
             }
-            self.pool.deinit();
+            self.map.deinit();
         }
         //
         // fn MakeStorage(comptime T: type) type {
@@ -67,7 +67,7 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
         /// acquire and duplicate key string if not already exist
         /// NOTE: this function copy the data therefore caller is responsible of freeing the Key after calling this function
         pub fn intern(self: *Self, key: *const K) !void {
-            const ptr = try self.pool.getOrPut(key.*);
+            const ptr = try self.map.getOrPut(key.*);
 
             if (ptr.found_existing) {
                 ptr.value_ptr.* += 1;
@@ -83,7 +83,10 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
                         @field(ptr.key_ptr, name) = source_value;
                     } else if (@typeInfo(@"type") == .pointer) {
                         std.debug.assert(@typeInfo(@"type").pointer.child == u8);
-                        @field(ptr.key_ptr, name) = try self.allocator.dupe(@typeInfo(@"type").pointer.child, source_value);
+                        @field(ptr.key_ptr, name) = try self.allocator.dupe(
+                            @typeInfo(@"type").pointer.child,
+                            source_value,
+                        );
                     } else {
                         @compileError("can only support pointer type");
                     }
@@ -98,10 +101,10 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
 
         /// decrement counter and when the counter reaches 0 delete the key
         pub fn release(self: *Self, key: *K) !void {
-            if (self.pool.getPtr(key.*)) |count| {
+            if (self.map.getPtr(key.*)) |count| {
                 count.* -= 1;
                 if (count.* == 0) {
-                    _ = self.pool.remove(key.*);
+                    _ = self.map.remove(key.*);
                     self.allocator.destroy(key);
                 }
                 return;
@@ -110,9 +113,9 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
         }
 
         pub fn invalidate(self: *Self, key: *K) !void {
-            if (self.pool.getPtr(key.*)) |count| {
+            if (self.map.getPtr(key.*)) |count| {
                 count.* = 0;
-                _ = self.pool.remove(key.*);
+                _ = self.map.remove(key.*);
                 self.allocator.destroy(key);
                 return;
             }
@@ -120,7 +123,7 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
         }
 
         pub fn get(self: *Self) ?*K {
-            var iter = self.pool.iterator();
+            var iter = self.map.iterator();
 
             if (iter.next()) |item| {
                 return item.key_ptr;

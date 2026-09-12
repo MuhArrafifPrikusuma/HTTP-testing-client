@@ -79,5 +79,4 @@ fn storeInMap(task: *Task, status: std.http.Status, max: u32, allocator: Allocat
         try res.intern(&to_intern_temp_constant);
         return;
     }
-    unreachable;
 }

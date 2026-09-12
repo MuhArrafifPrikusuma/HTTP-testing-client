@@ -2,6 +2,7 @@ const std = @import("std");
 
 const res = @import("response.zig");
 const ansii = @import("ansii.zig");
+const zcpy = @import("zerocpy.zig");
 
 const Self = @This();
 
@@ -22,7 +23,7 @@ halt: std.ArrayList(bool),
 options: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)),
 
 /// status accumulator to store how many response with that status class
-response: std.AutoHashMap(std.http.Status.Class, res.ResponsePool),
+response: std.AutoHashMap(std.http.Status.Class, zcpy.HashMap(res.Response, res.ResponseHashContext)),
 
 pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     var start_arena = std.heap.ArenaAllocator.init(backing_allocator);
@@ -74,7 +75,6 @@ pub fn read(
 
 fn showAllResponse(self: *Self, out_writer: *std.Io.Writer) !void {
     const repeat: u8 = @typeInfo(std.http.Status.Class).@"enum".field_names.len;
-    std.debug.print("how much is repeat: {d}\n", .{repeat});
 
     var i: u8 = 0;
     while (i < repeat) : (i += 1) {
@@ -90,43 +90,63 @@ fn showResponseByClassesSpecific(
 ) !void {
     const to_show: []const u8 = @tagName(class);
 
-    try out_writer.print("All response in class: {s}{s}{s}\n", .{
+    try out_writer.print("All response in class: {s}{s}{s}\r\n", .{
         ansii.styles.dim,
         to_show,
         ansii.reset,
     });
 
-    var @"found_any?": bool = false;
+    var found_total: u32 = 0;
 
     if (self.response.getPtr(class)) |respool| {
         while (respool.get()) |response| {
-            @"found_any?" = true;
+            found_total += 1;
 
             const total_found = respool.pool.get(response.*) orelse 0;
 
-            try out_writer.print("{s}status{s}: {any}\n", .{
+            try out_writer.print("\n{s}{s}{s}:\n", .{
+                ansii.styles.dim,
+                response.location,
+                ansii.reset,
+            });
+            try out_writer.print("{s}status{s}: {any}\r\n", .{
                 ansii.styles.bold,
                 ansii.reset,
                 response.status,
             });
-            try out_writer.print("{s}body{s}: {s}\n", .{
+            try out_writer.print("{s}body{s}: {s}\r\n", .{
                 ansii.styles.bold,
                 ansii.reset,
                 response.body,
             });
-            try out_writer.print("{s}Total Found{s}: {d}\n", .{
+            try out_writer.print("{s}Total Found{s}: {d}\r\n\n", .{
                 ansii.styles.bold,
                 ansii.reset,
                 total_found,
             });
 
             try respool.invalidate(response);
-        } else if (!@"found_any?") try out_writer.print("nothing in {s}{s}{s}\n", .{
-            ansii.styles.dim,
-            to_show,
-            ansii.reset,
-        });
+        } else if (found_total == 0) {
+            try out_writer.print("nothing in {s}{s}{s}\r\n", .{
+                ansii.styles.dim,
+                to_show,
+                ansii.reset,
+            });
+            return;
+        }
     } else unreachable;
+
+    const @"total > 1": []const u8 = if (found_total > 1) "responses" else "response";
+
+    try out_writer.print("total {s}{d}{s} unique {s} in {s}{s}{s}\r\n", .{
+        ansii.styles.dim,
+        found_total,
+        ansii.reset,
+        @"total > 1",
+        ansii.styles.dim,
+        to_show,
+        ansii.reset,
+    });
 }
 
 pub fn showResponseByClass(self: *Self, show: res.ShowClass, io: std.Io) !void {
@@ -138,6 +158,5 @@ pub fn showResponseByClass(self: *Self, show: res.ShowClass, io: std.Io) !void {
         .class => |c| try self.showResponseByClassesSpecific(c, stdout),
     }
 
-    std.debug.print("dont flush too much idiot water is scarce\n", .{});
     try stdout.flush();
 }

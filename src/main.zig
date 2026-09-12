@@ -71,12 +71,6 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io, todo: argument.DoAfter) !voi
     ci.deinit();
 
     progress.end();
-
-    task.write_counter.deinit(allocator);
-    task.read_counter.deinit(allocator);
-    task.halt.deinit(allocator);
-    task.options.deinit(allocator);
-
     switch (todo) {
         .showClass => |show| try task.showResponseByClass(show, io),
         else => std.debug.print("replace later\n", .{}),

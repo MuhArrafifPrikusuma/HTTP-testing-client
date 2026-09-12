@@ -1,6 +1,7 @@
 //! handle network io etc
 const std = @import("std");
 const res = @import("response.zig");
+const ansii = @import("ansii.zig");
 
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
@@ -13,6 +14,10 @@ pub fn clientNet(
     max_response: u32,
     progress: std.Progress.Node,
 ) void {
+    var buferr: [1028]u8 = undefined;
+    var err_writer = std.Io.File.stderr().writer(io, &buferr);
+    const stderr = &err_writer.interface;
+
     const allocator = task.arena.allocator();
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
     defer client.deinit();
@@ -32,13 +37,13 @@ pub fn clientNet(
 
     while (true) {
         const opt = task.read(io, thread_id, ci.client[thread_id].repeat) catch {
-            // std.log.debug("thread: {d} finished", .{thread_id});
             break;
         };
 
         const response = client.fetch(opt.*) catch |err| {
+            handleFetchError(stderr, opt, err);
+
             allocator.destroy(opt);
-            std.log.err("Client request fetch: {any}\n", .{err});
             continue;
         };
         if (opt.payload) |payload| {
@@ -48,10 +53,59 @@ pub fn clientNet(
 
         res.storeResponse(task, io, response.status, max_response);
 
-        if (response.status.class() == .success) {
-            // std.debug.print("status: {s}\n", .{shared.response_writer.written()});
-        }
         prog.completeOne();
+    }
+    stderr.flush() catch |err| std.log.err("stderr.flush(): {any}\n", .{err});
+}
+
+fn handleFetchError(
+    stderr: *std.Io.Writer,
+    options: *const std.http.Client.FetchOptions,
+    err: std.http.Client.FetchError,
+) void {
+    switch (err) {
+        error.ConnectionRefused,
+        error.ConnectionResetByPeer,
+        error.ConnectionPending,
+        => connectionErrors(stderr, options, err) catch |e|
+            std.log.err("connectionErrors: {any}\n", .{e}),
+        else => {},
+    }
+}
+
+fn connectionErrors(
+    stderr: *std.Io.Writer,
+    options: *const std.http.Client.FetchOptions,
+    err: std.http.Client.FetchError,
+) !void {
+    switch (err) {
+        error.ConnectionRefused => try stderr.print(
+            "{s}{s}{s}:Connection Refused\n",
+            .{
+                ansii.styles.dim,
+                options.location.url,
+                ansii.reset,
+            },
+        ),
+
+        error.ConnectionPending => try stderr.print(
+            "{s}{s}{s}:Attempting initiate connection before the previous connection finishes\n",
+            .{
+                ansii.styles.dim,
+                options.location.url,
+                ansii.reset,
+            },
+        ),
+
+        error.ConnectionResetByPeer => try stderr.print(
+            "{s}{s}{s}:Connection dropped by server\n",
+            .{
+                ansii.styles.dim,
+                options.location.url,
+                ansii.reset,
+            },
+        ),
+        else => unreachable,
     }
 }
 

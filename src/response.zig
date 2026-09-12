@@ -70,12 +70,13 @@ fn storeInMap(task: *Task, status: std.http.Status, max: u32, allocator: Allocat
         _ = task.response.fetchPutAssumeCapacity(.client_error, .init(allocator));
         _ = task.response.fetchPutAssumeCapacity(.informational, .init(allocator));
         _ = task.response.fetchPutAssumeCapacity(.server_error, .init(allocator));
-        return;
     }
+
+    const to_intern_temp_constant: Response = .{ .location = "localhost://8080/", .status = status };
 
     if (task.response.getPtr(status.class())) |res| {
         // NOTE: default by now fill with response from server later
-        try res.intern(.{ .status = status });
+        try res.intern(&to_intern_temp_constant);
         return;
     }
     unreachable;

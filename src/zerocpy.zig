@@ -6,16 +6,17 @@ pub const ZhashMapErr = error{
 };
 
 inline fn isPrimitive(comptime T: type) bool {
-    return switch (T) {
-        .Int, .Float, .Bool, .void, .null, .type, .comptime_int, .comptime_float => true,
+    return switch (@typeInfo(T)) {
+        .int, .float, .void, .type, .noreturn, .comptime_float, .comptime_int, .@"enum" => true,
         else => false,
     };
 }
 
+/// NOTE: also use this for the error accumulator
 /// return a hash map with K as key and usize as a counter for how many times that key has been found
 pub fn StructHashMap(comptime K: type, comptime Context: type) type {
-    if (K != std.builtin.Type.Struct)
-        @compileError("Expected struct, got" ++ @typeInfo(K));
+    if (@typeInfo(K) != .@"struct")
+        @compileError("Expected struct ");
 
     return struct {
         const Self = @This();
@@ -48,16 +49,25 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
             }
             self.pool.deinit();
         }
-
-        fn MakeStorage(comptime T: type) type {
-            var field_names: [@typeInfo(T).@"struct".field_names.len][:0]const u8 = undefined;
-            var field_types: [@typeInfo(T).@"struct".field_types.len]type = undefined;
-        }
+        //
+        // fn MakeStorage(comptime T: type) type {
+        //     var field_names: [@typeInfo(T).@"struct".field_names.len][:0]const u8 = undefined;
+        //     var field_types: [@typeInfo(T).@"struct".field_types.len]type = undefined;
+        //     var attributes: [@typeInfo(T).@"struct".field_names.len]std.builtin.Type.Struct.FieldAttributes = undefined;
+        //
+        //     inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_attrs, 0..) |name, attr, i| {
+        //         field_names[i] = name;
+        //         field_types[i] = @FieldType(T, name);
+        //         attributes[i] = attr;
+        //     }
+        //
+        //     return @Struct(.auto, null, field_names, field_types, attributes);
+        // }
 
         /// acquire and duplicate key string if not already exist
         /// NOTE: this function copy the data therefore caller is responsible of freeing the Key after calling this function
-        pub fn intern(self: *Self, key: K) !void {
-            const ptr = try self.pool.getOrPut(key);
+        pub fn intern(self: *Self, key: *const K) !void {
+            const ptr = try self.pool.getOrPut(key.*);
 
             if (ptr.found_existing) {
                 ptr.value_ptr.* += 1;
@@ -67,15 +77,19 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
                     @typeInfo(K).@"struct".field_types,
                     @typeInfo(K).@"struct".field_names,
                 ) |@"type", name| {
-                    if (isPrimitive(@"type")) {} else {}
+                    const source_value = @field(key, name);
+
+                    if (comptime isPrimitive(@"type")) {
+                        @field(ptr.key_ptr, name) = source_value;
+                    } else if (@typeInfo(@"type") == .pointer) {
+                        std.debug.assert(@typeInfo(@"type").pointer.child == u8);
+                        @field(ptr.key_ptr, name) = try self.allocator.dupe(@typeInfo(@"type").pointer.child, source_value);
+                    } else {
+                        @compileError("can only support pointer type");
+                    }
                 }
-                const body = try self.allocator.dupe(u8, key.body);
 
                 ptr.value_ptr.* = 1;
-
-                ptr.key_ptr.* = key;
-
-                ptr.key_ptr.body = body;
 
                 return;
             }

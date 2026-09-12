@@ -446,9 +446,12 @@ test "test request builder" {
     };
     ci.client = &client;
 
-    try task.write_counter.appendNTimes(allocator, .init(0), ci.client[thread_id].repeat);
-    try task.halt.appendNTimes(allocator, false, ci.client[thread_id].repeat);
-    try task.options.appendNTimes(allocator, .init(null), ci.client[thread_id].repeat);
+    if (ci.client[thread_id].repeat != 0) {
+        try task.write_counter.appendNTimes(allocator, .init(0), ci.client[thread_id].repeat);
+        try task.halt.appendNTimes(allocator, false, ci.client[thread_id].repeat);
+        try task.options.appendNTimes(allocator, .init(null), ci.client[thread_id].repeat);
+    }
+
     defer {
         task.write_counter.deinit(allocator);
         task.halt.deinit(allocator);

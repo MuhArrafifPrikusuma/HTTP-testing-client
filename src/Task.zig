@@ -23,7 +23,7 @@ halt: std.ArrayList(bool),
 options: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)),
 
 /// status accumulator to store how many response with that status class
-response: std.AutoHashMap(std.http.Status.Class, zcpy.HashMap(res.Response, res.ResponseHashContext)),
+response: std.AutoHashMap(std.http.Status.Class, zcpy.StructHashMap(res.Response, res.ResponseHashContext)),
 
 pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     var start_arena = std.heap.ArenaAllocator.init(backing_allocator);
@@ -99,12 +99,10 @@ fn showResponseByClassesSpecific(
     var found_total: u32 = 0;
 
     if (self.response.getPtr(class)) |respool| {
-        while (respool.get()) |response| {
-            found_total += 1;
-
+        while (respool.get()) |response| : (found_total += 1) {
             const total_found = respool.pool.get(response.*) orelse 0;
 
-            try out_writer.print("\n{s}{s}{s}:\n", .{
+            try out_writer.print("\n{s}{s}{s}\n", .{
                 ansii.styles.dim,
                 response.location,
                 ansii.reset,
@@ -138,6 +136,7 @@ fn showResponseByClassesSpecific(
 
     const @"total > 1": []const u8 = if (found_total > 1) "responses" else "response";
 
+    std.debug.print("how much is it {d}\n", .{found_total});
     try out_writer.print("total {s}{d}{s} unique {s} in {s}{s}{s}\r\n", .{
         ansii.styles.dim,
         found_total,

@@ -47,6 +47,9 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io, todo: argument.DoAfter) !voi
     var max_response: u32 = 0;
     for (ci.client, 0..) |c, i| {
         max_response += c.repeat;
+
+        if (c.repeat == 0) continue;
+
         task.options.appendNTimes(allocator, .init(null), @as(usize, ci.client[i].repeat)) catch |err| {
             std.log.err("not enough memory: {any}\n", .{err});
             std.process.exit(1);
@@ -61,8 +64,11 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io, todo: argument.DoAfter) !voi
         .root_name = "waiting",
     });
 
+    var total_repeat: u32 = 0;
+
     var group: std.Io.Group = .init;
-    for (ci.client, 0..) |_, i| {
+    for (ci.client, 0..) |cl, i| {
+        total_repeat += cl.repeat;
         try group.concurrent(io, Req.initBuilder, .{ io, ci, task, i, progress });
         try group.concurrent(io, client.clientNet, .{ io, ci, task, i, max_response, progress });
     }
@@ -71,8 +77,12 @@ fn splitTasks(ci: *Req.ClientInterface, io: std.Io, todo: argument.DoAfter) !voi
     ci.deinit();
 
     progress.end();
-    switch (todo) {
-        .showClass => |show| try task.showResponseByClass(show, io),
-        else => std.debug.print("replace later\n", .{}),
+    if (total_repeat != 0) {
+        switch (todo) {
+            .showClass => |show| try task.showResponseByClass(show, io),
+            else => std.debug.print("replace later\n", .{}),
+        }
     }
 }
+
+// NOTE: repeat = 0 is not handled properly handle it later and finish task immediately if it's 0

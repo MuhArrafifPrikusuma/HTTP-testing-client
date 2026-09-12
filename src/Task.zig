@@ -98,9 +98,9 @@ fn showResponseByClassesSpecific(
 
     var found_total: u32 = 0;
 
-    if (self.response.getPtr(class)) |respool| {
-        while (respool.get()) |response| : (found_total += 1) {
-            const total_found = respool.pool.get(response.*) orelse 0;
+    if (self.response.getPtr(class)) |res_map| {
+        while (res_map.get()) |response| : (found_total += 1) {
+            const total_found = res_map.map.get(response.*) orelse 0;
 
             try out_writer.print("\n{s}{s}{s}\n", .{
                 ansii.styles.dim,
@@ -123,7 +123,7 @@ fn showResponseByClassesSpecific(
                 total_found,
             });
 
-            try respool.invalidate(response);
+            try res_map.invalidate(response);
         } else if (found_total == 0) {
             try out_writer.print("nothing in {s}{s}{s}\r\n", .{
                 ansii.styles.dim,
@@ -132,11 +132,10 @@ fn showResponseByClassesSpecific(
             });
             return;
         }
-    } else unreachable;
+    } else {} // <- NOTE: idk what to put here
 
     const @"total > 1": []const u8 = if (found_total > 1) "responses" else "response";
 
-    std.debug.print("how much is it {d}\n", .{found_total});
     try out_writer.print("total {s}{d}{s} unique {s} in {s}{s}{s}\r\n", .{
         ansii.styles.dim,
         found_total,

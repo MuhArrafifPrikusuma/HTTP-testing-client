@@ -2,10 +2,109 @@
 	{
 		"fuzz": true,
 		"repeat": 100,
-		"uri": "http://localhost:8080",
+		"uri": "https://httpbin.org",
 		"request": {
 			"method": "GET",
-			"path": "/",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
+			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
+			"content_type": "application/json"
+		}
+	},
+	{
+		"fuzz": true,
+		"repeat": 100,
+		"uri": "https://httpbin.org",
+		"request": {
+			"method": "GET",
+			"path": "/get",
 			"body": "{\n  \"fuzz\": {RAND_STR},\n  \"repeat\": {RAND_NUM},\n  \"uri\": {RAND_STR}\n \"invalid\": {RAND_INV}  \n}",
 			"content_type": "application/json"
 		}

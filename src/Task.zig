@@ -10,17 +10,30 @@ const SharedErr = error{
     ReadComplete,
 };
 
+const Assignment = enum {
+    Reading,
+    Writing,
+};
+
+const Locations = struct {
+    url: ?[*:0]const u8 = null,
+    next: ?*Locations = null,
+};
+
 /// NOTE: if a thread finished it should free all of memory they use for other slices, use loop with allocator free for this
 mutex: std.Io.Mutex,
 arena: std.heap.ArenaAllocator,
 
 // use counter for atomic indexing
-read_counter: std.ArrayList(std.atomic.Value(usize)),
-write_counter: std.ArrayList(std.atomic.Value(usize)),
+read_counter: std.atomic.Value(usize),
+write_counter: std.atomic.Value(usize),
 
-halt: std.ArrayList(bool),
+// currently availiable job
+assign: std.atomic.Value(Assignment),
 
-options: std.ArrayList(std.atomic.Value(?*std.http.Client.FetchOptions)),
+// halt: std.ArrayList(bool),
+
+options: std.atomic.Value(?*std.http.Client.FetchOptions),
 
 /// status accumulator to store how many response with that status class
 response: std.AutoHashMap(std.http.Status.Class, zcpy.StructHashMap(res.Response, res.ResponseHashContext)),
@@ -36,7 +49,8 @@ pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     self.*.arena = start_arena;
     const allocator = self.arena.allocator();
 
-    self.*.halt = .empty;
+    self.*.locations = .{};
+    self.*.assign = .init(.Writing);
     self.*.mutex = .init;
     self.*.options = .empty;
     self.*.read_counter = .empty;

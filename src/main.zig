@@ -1,31 +1,47 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const curl = @import("curl.zig");
+
 const argument = @import("arguments.zig");
 const json = @import("json.zig");
 const client = @import("client.zig");
 const res = @import("response.zig");
+const ansii = @import("ansii.zig");
 
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
 
 const Allocator = std.mem.Allocator;
 
-var debug_allocator: std.heap.DebugAllocator(.{ .safety = true, .thread_safe = true }) = .init;
+// NOTE: remember to use dupeSentinel
 
-pub const std_Options = struct {
-    pub const http_connection_pool_size = 10000;
-};
+var debug_allocator: std.heap.DebugAllocator(.{ .safety = true, .thread_safe = true }) = .init;
 
 // NOTE: i think switch the way the writer work by only working on batch of maximum 10k request per second
 // to keep the memory usage under 100mb even when sending like 100m requests
 pub fn main(init: std.process.Init.Minimal) !void {
+    const init_status: curl.CURLcode = curl.curl_global_init(curl.CURL_GLOBAL_ALL);
+    if (init_status != 0) std.debug.panic(
+        "failed to initialize libcurl\nstatus code: {s}{d}{s}\n",
+        .{
+            ansii.styles.dim,
+            init_status,
+            ansii.reset,
+        },
+    );
+
     const allocator = switch (builtin.mode) {
         .debug, .safe => debug_allocator.allocator(),
         .fast, .small => std.heap.smp_allocator,
     };
+    const cores = std.Thread.getCpuCount() catch default: {
+        std.log.err("failed to get cpu cores defaulting to 1", .{});
+        break :default 1;
+    };
+
     // NOTE: limit this later to be pinned directly to target machine number of cpu cores
-    var threaded = std.Io.Threaded.init(allocator, .{ .concurrent_limit = .unlimited });
+    var threaded = std.Io.Threaded.init(allocator, .{ .concurrent_limit = .max(cores) });
     const io = threaded.io();
 
     const todo = argument.handleArgs(init.args, io);
@@ -35,6 +51,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const ci = try json.parseJson();
 
     splitTasks(ci, io, todo, allocator) catch |err| std.log.err("{any}\n", .{err});
+
+    curl.curl_global_cleanup();
 }
 
 fn splitTasks(
@@ -100,4 +118,38 @@ fn splitTasks(
     }
 }
 
+fn spinWorker(
+    io: std.Io,
+    todo: argument.DoAfter,
+    ci: *Req.ClientInterface,
+    cores: u16,
+    allocator: Allocator,
+) !void {
+    const task = try Task.init(allocator);
+
+    const progress = std.Progress.start(io, .{ .root_name = "waiting" });
+
+    var i: u32 = 0;
+    while (i < cores) : (i += 1) {
+        worker(io, ci, progress);
+    }
+
+    switch (todo) {
+        .showClass => {},
+        else => {},
+    }
+}
+
 // NOTE: repeat = 0 is not handled properly handle it later and finish task immediately if it's 0
+
+fn worker(task: *Task, io: std.Io, ci: *Req.ClientInterface, progress: std.Progress.Node) !void {
+    const multi_handler = curl.curl_multi_init() orelse
+        @panic("failed to init curl multi handler");
+
+    while (true) {
+        switch (task.job.load(.acquire)) {
+            .Writing => {},
+            .Reading => {},
+        }
+    }
+}

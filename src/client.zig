@@ -23,8 +23,8 @@ pub fn clientNet(
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
     defer client.deinit();
 
-    const testing = curl.curl_global_init(curl.CURL_GLOBAL_ALL);
-    std.debug.print("testing curl {d}\n", .{testing});
+    // const testing = curl.curl_global_init(curl.CURL_GLOBAL_ALL);
+    // std.debug.print("testing curl {d}\n", .{testing});
 
     var buf: [8196]u8 = undefined;
     const progress_name: []const u8 = pn: {
@@ -116,6 +116,19 @@ fn connectionErrors(
             },
         ),
         else => unreachable,
+    }
+}
+
+fn fetcher(task: *Task, multi: *curl.CURL) void {
+    const easy = curl.curl_easy_init() orelse {
+        std.log.err("failed to initiate curl easy\n", .{});
+        return;
+    };
+
+    curl.curl_easy_setopt(easy, curl.CURLOPT_HTTPHEADER, headers);
+
+    if (curl.curl_multi_add_handle(multi, easy) != 0) {
+        std.log.err("curl_multi_add_handle in fetcher\n", .{});
     }
 }
 

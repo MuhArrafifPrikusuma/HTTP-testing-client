@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+
 pub const ZhashMapErr = error{
     InvalidKey,
 };
@@ -49,20 +50,6 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
             }
             self.map.deinit();
         }
-        //
-        // fn MakeStorage(comptime T: type) type {
-        //     var field_names: [@typeInfo(T).@"struct".field_names.len][:0]const u8 = undefined;
-        //     var field_types: [@typeInfo(T).@"struct".field_types.len]type = undefined;
-        //     var attributes: [@typeInfo(T).@"struct".field_names.len]std.builtin.Type.Struct.FieldAttributes = undefined;
-        //
-        //     inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_attrs, 0..) |name, attr, i| {
-        //         field_names[i] = name;
-        //         field_types[i] = @FieldType(T, name);
-        //         attributes[i] = attr;
-        //     }
-        //
-        //     return @Struct(.auto, null, field_names, field_types, attributes);
-        // }
 
         /// acquire and duplicate key string if not already exist
         /// NOTE: this function copy the data therefore caller is responsible of freeing the Key after calling this function
@@ -129,6 +116,68 @@ pub fn StructHashMap(comptime K: type, comptime Context: type) type {
                 return item.key_ptr;
             }
             return null;
+        }
+    };
+}
+
+/// Only for primitives type and array
+pub fn StringMap(comptime T: type, comptime counting: bool) type {
+    return struct {
+        const Self = @This();
+
+        items: std.AutoHashMap(T, if (counting) usize else void),
+        len: usize,
+        allocator: Allocator,
+
+        pub fn init(self: *Self, allocator: Allocator) void {
+            self.len = 0;
+            self.allocator = allocator;
+            self.items = .init(self.allocator);
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.items.deinit();
+        }
+
+        /// note that this function will copy the value if it's not yet exist in the list therefore
+        /// caller is response of freeing the value if the value is heap allocated
+        pub fn intern(self: *Self, value: T) !void {
+            const ptr = try self.items.getOrPut(value);
+
+            if (ptr.found_existing) {
+                ptr.value_ptr.* += 1;
+            } else {
+                comptime {
+                    if (@typeInfo(T) == .pointer) {
+                        ptr.key_ptr = try self.allocator.dupe(@typeInfo(T).pointer.child, value);
+                    } else if (isPrimitive(T)) {
+                        ptr.value_ptr.* = value;
+                    } else {
+                        @compileError("unsupported type");
+                    }
+                }
+
+                ptr.value_ptr.* = 1;
+                self.len += 1;
+            }
+        }
+
+        pub fn get(self: *Self) !*T {
+            var iter = self.items.iterator();
+
+            while (iter.next()) |val| {
+                return val.key_ptr;
+            }
+            return error.NothingFound;
+        }
+
+        pub fn invalidate(self: *Self, item: *T) !void {
+            if (self.items.remove(item.*)) {
+                self.allocator.destroy(item);
+            } else {
+                return error.ItemDoesNotExist;
+            }
+            unreachable;
         }
     };
 }

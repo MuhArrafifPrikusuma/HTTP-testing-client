@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const curl = @import("curl.zig");
 
 const Task = @import("Task.zig");
 
@@ -13,7 +14,7 @@ pub const Client = struct {
     // it will generate different data on every request
     repeat: u32 = 1,
     // NOTE: use this as the best url and combine it with path or i might not have to do that if i connect first
-    uri: []const u8,
+    location: []const u8,
     request: Request = .{},
 };
 
@@ -22,6 +23,11 @@ const Methods = enum {
     POST,
     PUT,
     DELETE,
+};
+
+const RequestContext = struct {
+    payload: ?[]const u8,
+    headers: ?*curl.curl_slist = null,
 };
 
 const Request = struct {

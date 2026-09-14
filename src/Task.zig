@@ -4,6 +4,8 @@ const res = @import("response.zig");
 const ansii = @import("ansii.zig");
 const zcpy = @import("zerocpy.zig");
 
+const Http = @import("Http.zig");
+
 const Self = @This();
 
 const SharedErr = error{
@@ -15,10 +17,10 @@ const Assignment = enum {
     Writing,
 };
 
-const Locations = struct {
-    url: ?[*:0]const u8 = null,
-    next: ?*Locations = null,
-};
+// if writer reached a certain amount of memory usage free all of it after reading and then
+// switch the thread to fetcher thread and then after a certain goal has been accomplish
+// go back to writing
+var writer_memory_usage: usize = 0;
 
 /// NOTE: if a thread finished it should free all of memory they use for other slices, use loop with allocator free for this
 mutex: std.Io.Mutex,
@@ -28,12 +30,14 @@ arena: std.heap.ArenaAllocator,
 read_counter: std.atomic.Value(usize),
 write_counter: std.atomic.Value(usize),
 
+total_task: usize,
+
 // currently availiable job
 assign: std.atomic.Value(Assignment),
 
 // halt: std.ArrayList(bool),
 
-options: std.atomic.Value(?*std.http.Client.FetchOptions),
+request: std.ArrayList(std.atomic.Value(?*Http)),
 
 /// status accumulator to store how many response with that status class
 response: std.AutoHashMap(std.http.Status.Class, zcpy.StructHashMap(res.Response, res.ResponseHashContext)),
@@ -49,12 +53,11 @@ pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     self.*.arena = start_arena;
     const allocator = self.arena.allocator();
 
-    self.*.locations = .{};
     self.*.assign = .init(.Writing);
     self.*.mutex = .init;
-    self.*.options = .empty;
-    self.*.read_counter = .empty;
-    self.*.write_counter = .empty;
+    self.*.request = .empty;
+    self.*.read_counter = .init(0);
+    self.*.write_counter = .init(0);
     self.*.response = .init(allocator);
 
     return self;
@@ -76,7 +79,7 @@ pub fn read(
     while (true) {
         if (idx >= max) return SharedErr.ReadComplete;
 
-        if (self.options.items[idx].load(.acquire)) |opt| {
+        if (self.request.items[idx].load(.acquire)) |opt| {
             return opt;
         } else {
             std.Io.sleep(io, std.Io.Duration.fromMilliseconds(1), std.Io.Clock.real) catch |err| {

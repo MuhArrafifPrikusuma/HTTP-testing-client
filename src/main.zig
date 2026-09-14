@@ -11,6 +11,7 @@ const ansii = @import("ansii.zig");
 
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
+const Http = @import("Http.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -22,6 +23,8 @@ var debug_allocator: std.heap.DebugAllocator(.{ .safety = true, .thread_safe = t
 // to keep the memory usage under 100mb even when sending like 100m requests
 pub fn main(init: std.process.Init.Minimal) !void {
     const init_status: curl.CURLcode = curl.curl_global_init(curl.CURL_GLOBAL_ALL);
+    defer curl.curl_global_cleanup();
+
     if (init_status != 0) std.debug.panic(
         "failed to initialize libcurl\nstatus code: {s}{d}{s}\n",
         .{
@@ -46,13 +49,12 @@ pub fn main(init: std.process.Init.Minimal) !void {
 
     const todo = argument.handleArgs(init.args, io);
     if (todo == .exit) std.process.exit(0);
+
     std.debug.print("what todo: {any}\n", .{todo});
 
     const ci = try json.parseJson();
 
     splitTasks(ci, io, todo, allocator) catch |err| std.log.err("{any}\n", .{err});
-
-    curl.curl_global_cleanup();
 }
 
 fn splitTasks(
@@ -125,7 +127,7 @@ fn spinWorker(
     cores: u16,
     allocator: Allocator,
 ) !void {
-    const task = try Task.init(allocator);
+    const task = Task.init(allocator) catch @panic("failed to initiate tasks");
 
     const progress = std.Progress.start(io, .{ .root_name = "waiting" });
 
@@ -146,10 +148,12 @@ fn worker(task: *Task, io: std.Io, ci: *Req.ClientInterface, progress: std.Progr
     const multi_handler = curl.curl_multi_init() orelse
         @panic("failed to init curl multi handler");
 
+    const http: Http = undefined;
+
     while (true) {
         switch (task.job.load(.acquire)) {
             .Writing => {},
-            .Reading => {},
+            .Reading => client.fetcher(task, multi_handler, &http),
         }
     }
 }

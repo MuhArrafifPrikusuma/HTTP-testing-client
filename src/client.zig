@@ -6,6 +6,7 @@ const curl = @import("curl.zig");
 
 const Req = @import("Request.zig");
 const Task = @import("Task.zig");
+const Http = @import("Http.zig");
 
 pub fn clientNet(
     io: std.Io,
@@ -119,13 +120,16 @@ fn connectionErrors(
     }
 }
 
-fn fetcher(task: *Task, multi: *curl.CURL) void {
+pub fn fetcher(task: *Task, multi: *curl.CURL, http: *Http) void {
     const easy = curl.curl_easy_init() orelse {
         std.log.err("failed to initiate curl easy\n", .{});
         return;
     };
 
-    curl.curl_easy_setopt(easy, curl.CURLOPT_HTTPHEADER, headers);
+    const curl_code = curl.curl_easy_setopt(easy, curl.CURLOPT_HTTPHEADER, http.headers);
+    if (curl_code != 0) {
+        std.log.err("curl easy setopt err code: {d}\n", .{curl_code});
+    }
 
     if (curl.curl_multi_add_handle(multi, easy) != 0) {
         std.log.err("curl_multi_add_handle in fetcher\n", .{});

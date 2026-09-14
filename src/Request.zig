@@ -71,7 +71,7 @@ pub const ClientInterface = struct {
 // NOTE: determine whether it wants random data for fixed data and if it's random then take the struct see the requirements
 // and then generate data on the fly when a thread requested for it
 
-pub fn initBuilder(
+pub fn startBuilder(
     io: std.Io,
     ci: *const ClientInterface,
     task: *Task,

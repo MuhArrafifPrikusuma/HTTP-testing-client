@@ -1,3 +1,4 @@
+//! for shared state and other stuff related to the shared state
 const std = @import("std");
 
 const res = @import("response.zig");
@@ -8,35 +9,57 @@ const Http = @import("Http.zig");
 
 const Self = @This();
 
+// NOTE: im still not sure how would i count the dval but it is indeed going to be using the read/write counter
+
+/// this is thread local data to manage it's own state and let worker choose which
+pub const Demand = struct {
+    current_job: Jobs = .none,
+
+    pub fn job(self: *Demand, dval: u16) Jobs {
+        if (dval == 0) return self.current_job;
+        if (dval < 0)
+            return .write;
+        return .fetch;
+    }
+
+    pub fn name() !void {}
+};
+
 const SharedErr = error{
     ReadComplete,
 };
 
-const Assignment = enum {
-    Reading,
-    Writing,
+const Jobs = enum {
+    fetch,
+    write,
+    none,
+    /// resign is to well stop the thread
+    resign,
 };
 
 // if writer reached a certain amount of memory usage free all of it after reading and then
 // switch the thread to fetcher thread and then after a certain goal has been accomplish
 // go back to writing
-var writer_memory_usage: usize = 0;
 
 /// NOTE: if a thread finished it should free all of memory they use for other slices, use loop with allocator free for this
 mutex: std.Io.Mutex,
 arena: std.heap.ArenaAllocator,
 
-// use counter for atomic indexing
-read_counter: std.atomic.Value(usize),
-write_counter: std.atomic.Value(usize),
+// use counter for atomic indexing'
+// it's in a hashmap which hashes to the exact json data for each of this
+read_counter: []const std.atomic.Value(usize),
+write_counter: []const std.atomic.Value(usize),
 
+/// don't ever mutate this initialized once by main thread and noone else shall ever touch it again
 total_task: usize,
 
-// currently availiable job
-assign: std.atomic.Value(Assignment),
+/// demand value to pass to thread local Demand to then decide should it change job?, should it stay in it's current job? or
+/// should it resign
+dval: std.atomic.Value(u16),
 
 // halt: std.ArrayList(bool),
 
+/// NOTE: limit certain amount memory for this array and then deinit and reinit it so the memory reset
 request: std.ArrayList(std.atomic.Value(?*Http)),
 
 /// status accumulator to store how many response with that status class
@@ -53,9 +76,9 @@ pub fn init(backing_allocator: std.mem.Allocator) !*Self {
     self.*.arena = start_arena;
     const allocator = self.arena.allocator();
 
-    self.*.assign = .init(.Writing);
     self.*.mutex = .init;
     self.*.request = .empty;
+    self.*.dval = .init(0);
     self.*.read_counter = .init(0);
     self.*.write_counter = .init(0);
     self.*.response = .init(allocator);
@@ -89,6 +112,10 @@ pub fn read(
         }
     }
 }
+//
+// pub fn getTaskId(self: *Self) usize {
+//     self.
+// }
 
 fn showAllResponse(self: *Self, out_writer: *std.Io.Writer) !void {
     const repeat: u8 = @typeInfo(std.http.Status.Class).@"enum".field_names.len;

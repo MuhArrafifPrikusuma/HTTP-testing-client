@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const curl = @import("curl.zig");
-
 const argument = @import("arguments.zig");
 const json = @import("json.zig");
 const client = @import("client.zig");
@@ -120,6 +119,11 @@ fn splitTasks(
     }
 }
 
+const RwProgress = struct {
+    write: std.Progress.Node,
+    fetch: std.Progress.Node,
+};
+
 fn spinWorker(
     io: std.Io,
     todo: argument.DoAfter,
@@ -128,32 +132,53 @@ fn spinWorker(
     allocator: Allocator,
 ) !void {
     const task = Task.init(allocator) catch @panic("failed to initiate tasks");
+    defer task.deinit();
 
     const progress = std.Progress.start(io, .{ .root_name = "waiting" });
 
+    task.write_counter = try allocator.alloc(std.atomic.Value(usize), ci.client.len);
+    task.read_counter = try allocator.alloc(std.atomic.Value(usize), ci.client.len);
+    defer {
+        allocator.free(task.write_counter);
+        allocator.free(task.read_counter);
+    }
+
+    // NOTE: there must be a better way to do this figure it out later
+    for (ci.client, 0..) |_, i| {
+        task.write_counter[i] = .init(0);
+        task.read_counter[i] = .init(0);
+    }
+
+    const rw_prog: RwProgress = .{
+        .write = progress.start("writing payload", task.total_task),
+        .fetch = progress.start("fetching", task.total_task),
+    };
+
     var i: u32 = 0;
     while (i < cores) : (i += 1) {
-        worker(io, ci, progress);
+        worker(io, ci, rw_prog);
     }
 
     switch (todo) {
-        .showClass => {},
+        .showClass => |s| task.showResponseByClass(s, io),
         else => {},
     }
 }
 
 // NOTE: repeat = 0 is not handled properly handle it later and finish task immediately if it's 0
 
-fn worker(task: *Task, io: std.Io, ci: *Req.ClientInterface, progress: std.Progress.Node) !void {
+/// NOTE: right now i don't know how should i stop this worker from working but figure it out later
+fn worker(task: *Task, io: std.Io, ci: *Req.ClientInterface, progress: RwProgress) void {
     const multi_handler = curl.curl_multi_init() orelse
         @panic("failed to init curl multi handler");
-
     const http: Http = undefined;
+
+    var task_id: usize = 0;
 
     while (true) {
         switch (task.job.load(.acquire)) {
-            .Writing => {},
-            .Reading => client.fetcher(task, multi_handler, &http),
+            .write => Req.builder(ci, io, task, 0, progress.write),
+            .fetch => client.fetcher(task, multi_handler, &http),
         }
     }
 }

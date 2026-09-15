@@ -28,13 +28,13 @@ pub fn parseJson() !*Req.ClientInterface {
     // var count: usize = 1;
 
     // while (true) {
-    // NOTE: PLEASSEE! DON'T BE LAZY MAKE THIS BETTER ERROR HANDLING YOU IDIOT PIECE OF GARBAGE
     const parsed = std.json.parseFromTokenSource([]Req.Client, allocator, &scanner, .{ .ignore_unknown_fields = true }) catch |err| {
         // if (err == error.EndOfStream) break;
         std.log.err("parse Json: {any}\n", .{err});
         std.process.exit(1);
         // break;
     };
+    defer parsed.deinit();
     //
     // std.log.debug("fuzz: {any}\n", .{parsed.value.fuzz});
     // std.log.debug("repeat: {d}\n", .{parsed.value.repeat});

@@ -9,6 +9,7 @@ pub const RequestHeader = struct {
     keep_alive: bool = true,
 };
 
+/// NOTE: right now only GET and POST work properly the rest is not working well yet
 pub const Method = enum {
     GET,
     POST,

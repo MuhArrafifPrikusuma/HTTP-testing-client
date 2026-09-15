@@ -15,8 +15,8 @@ pub const Client = struct {
     // it will generate different data on every request
     repeat: u32 = 1,
     // NOTE: use this as the best url and combine it with path or i might not have to do that if i connect first
-    location: []const u8,
-    request: Request = .{},
+    url: []const u8,
+    request: RequestContext = .{},
 };
 
 const Methods = enum {
@@ -46,20 +46,20 @@ const RequestContext = struct {
     payload: ?[]const u8,
     headers: ?*curl.curl_slist = null,
 };
-
-const Request = struct {
-    method: ?std.http.Method = null,
-    path: []const u8 = "/",
-    host: []const u8 = "127.0.0.1", // <- NOTE: replace this with client host after this
-    agent: []const u8 = "idk-for-now/tester", // <- automatically filled
-    body: ?[]const u8 = null,
-
-    content_type: []const u8 = "text/plain",
-    accept_type: ?[]const u8 = null,
-
-    keep_alive: bool = true,
-};
-
+//
+// const Request = struct {
+//     method: ?std.http.Method = null,
+//     path: []const u8 = "/",
+//     host: []const u8 = "127.0.0.1", // <- NOTE: replace this with client host after this
+//     agent: []const u8 = "idk-for-now/tester", // <- automatically filled
+//     body: ?[]const u8 = null,
+//
+//     content_type: []const u8 = "text/plain",
+//     accept_type: ?[]const u8 = null,
+//
+//     keep_alive: bool = true,
+// };
+//
 /// initiate client arena allocator
 pub const ClientInterface = struct {
     arena: std.heap.ArenaAllocator,
@@ -88,6 +88,7 @@ pub const ClientInterface = struct {
 // NOTE: determine whether it wants random data for fixed data and if it's random then take the struct see the requirements
 // and then generate data on the fly when a thread requested for it
 
+/// NOTE this might not be needed and we shall just call builder from the worker
 pub fn startBuilder(
     io: std.Io,
     ci: *const ClientInterface,
@@ -118,12 +119,11 @@ pub fn startBuilder(
 }
 
 // this will be called by client to generate data
-fn builder(
+pub fn builder(
     ci: *const ClientInterface,
     io: std.Io,
     task: *Task,
-    thread_id: usize,
-    prog: ProgressNode,
+    prog: std.Progress.Node,
 ) void {
     const max_write_per_batch: u32 = 10_000;
     var current_batch_write: u32 = 0;
@@ -425,6 +425,7 @@ fn randString(random: std.Random) Value {
     return value;
 }
 
+// NOTE: HEY IDIOT REMEMBER YOU HAVEN'T DONE ANYTHING WITH THIS
 /// return newly generated data based on tag and rules
 fn fuzzer(tag: SpecialTags, io: std.Io) !Value {
     var prng: std.Random.DefaultPrng = .init(blk: {

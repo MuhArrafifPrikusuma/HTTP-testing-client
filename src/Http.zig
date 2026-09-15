@@ -2,7 +2,6 @@ const std = @import("std");
 const curl = @import("curl.zig");
 
 pub const RequestHeader = struct {
-    path: []const u8 = "/",
     body: ?[]const u8 = null,
     content_type: []const u8 = "text/plain",
     accept_type: ?[]const u8 = null,
@@ -24,6 +23,7 @@ pub const Method = enum {
     PRI,
 };
 
+/// for custom header
 const Self = @This();
 
 pub const HttpError = error{
@@ -44,6 +44,7 @@ headers: ?*curl.curl_slist = null,
 method: ?Method = null,
 payload: ?[]const u8 = null,
 
+// free
 pub fn applyToEasy(self: *const Self, easy: *curl.CURL) !void {
     const url = self.url orelse return HttpError.NoUrlFound;
     const method = self.method orelse return HttpError.NoMethodFound;
@@ -56,12 +57,11 @@ pub fn applyToEasy(self: *const Self, easy: *curl.CURL) !void {
 
     if (self.headers) |headers| {
         code = curl.curl_easy_setopt(easy, curl.CURLOPT_HTTPHEADER, headers);
-        return HttpError.CurlSetoptFailed;
-    }
 
-    if (code != curl.CURLE_OK) {
-        std.log.err("curl_easy_setopt header: {d}\n", .{code});
-        return HttpError.CurlSetoptFailed;
+        if (code != curl.CURLE_OK) {
+            std.log.err("curl_easy_setopt header: {d}\n", .{code});
+            return HttpError.CurlSetoptFailed;
+        }
     }
 
     code = switch (method) {
@@ -94,6 +94,15 @@ pub fn applyToEasy(self: *const Self, easy: *curl.CURL) !void {
             }
         }
     }
+}
+
+/// this copies the string therefore caller is responsible for free the string after appending
+pub fn appendHeader(
+    self: *Self,
+    data: [*:0]const u8,
+) !void {
+    const tmp: *curl.curl_slist = null;
+    curl.curl_slist_append(self.headers, data);
 }
 
 /// use this after perform

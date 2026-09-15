@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const curl = @import("curl.zig");
 
 const Task = @import("Task.zig");
+const Http = @import("Http.zig");
 
 const Allocator = std.mem.Allocator;
 const ProgressNode = if (builtin.is_test) void else std.Progress.Node;
@@ -23,6 +24,22 @@ const Methods = enum {
     POST,
     PUT,
     DELETE,
+};
+
+const HeadersOptions = enum {
+    Accept,
+    AcceptEncoding,
+    AcceptLanguage,
+    ContentType,
+
+    pub fn getHeaderString(self: HeadersOptions) []const u8 {
+        switch (self) {
+            .Accept => return "Accept",
+            .AcceptEncoding => return "Accept-Encoding",
+            .AcceptLanguage => return "Accept-Language",
+            .ContentType => return "Content-Type",
+        }
+    }
 };
 
 const RequestContext = struct {
@@ -464,7 +481,7 @@ test "test request builder" {
         task.options.deinit(allocator);
     }
 
-    initBuilder(
+    startBuilder(
         io,
         ci,
         task,
@@ -477,4 +494,18 @@ test "test request builder" {
     } else {
         try std.testing.expect(false);
     }
+}
+
+fn formatHeaderOptionsSentinel(
+    b: []const u8,
+    header_data: []const u8,
+    opt: HeadersOptions,
+) std.mem.PrintError![*:0]const u8 {
+    // don't append \r\n since curl already handle that
+    return std.mem.printSentinel(
+        b,
+        "{s}: {s}",
+        .{ opt.getHeaderString(), header_data },
+        0,
+    );
 }
